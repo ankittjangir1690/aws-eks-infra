@@ -1,0 +1,49 @@
+# =============================================================================
+# TERRAFORM.TFVARS EXAMPLE - AWS EKS Infrastructure
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+# NEVER commit terraform.tfvars to version control
+
+# Project Configuration
+project_name = "my-eks-project"
+environment  = "dev"  # Options: dev, staging, prod, test
+owner        = "Your Name"
+cost_center  = "Engineering"
+
+# AWS Configuration
+region = "ap-south-1"  # Change to your preferred region
+
+# VPC Configuration
+vpc_cidr = "10.0.0.0/16"
+availability_zones = ["ap-south-1a", "ap-south-1b"]
+
+# VPC Peering (optional - leave empty if not needed)
+vpc_peering_connection_id = ""
+
+# EKS Configuration
+eks_cluster_version = "1.32"
+eks_admin_users = [
+  "your-iam-username",
+  "another-iam-username"
+]
+
+# Node Group Configuration
+eks_node_instance_types = ["t3a.medium", "t3a.large"]
+eks_node_desired_size   = 2
+eks_node_min_size       = 1
+eks_node_max_size       = 5
+
+# Security Configuration - IMPORTANT: Restrict these in production!
+allowed_public_cidrs = [
+  "YOUR_IP_ADDRESS/32",  # Replace with your actual IP
+  "YOUR_OFFICE_CIDR/24"  # Replace with your office network
+]
+
+# Security Features
+enable_vpc_flow_logs           = true
+enable_cloudwatch_logs        = true
+enable_eks_control_plane_logging = true
+
+# Backup Configuration
+enable_efs_backup      = false
+backup_retention_days  = 30
