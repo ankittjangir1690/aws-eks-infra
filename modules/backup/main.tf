@@ -1,5 +1,5 @@
 # =============================================================================
-# BACKUP MODULE - AWS Backup Configuration
+# BACKUP MODULE - Simplified Configuration (Backup Vaults Disabled)
 # =============================================================================
 
 # Data sources
@@ -15,211 +15,20 @@ resource "random_string" "bucket_suffix" {
   upper   = false
 }
 
-# Primary Backup Vault
-resource "aws_backup_vault" "main" {
-  count = var.enable_backup ? 1 : 0
-  
-  name = "${var.project}-${var.env}-backup-vault"
-  
-  # Enable point-in-time recovery
-  force_destroy = false
-  
-  # KMS encryption for compliance (CKV_AWS_166)
-  encryption_key_arn = aws_kms_key.backup_default[0].arn
-  
-  # Ensure KMS key is created before backup vault
-  depends_on = [aws_kms_key.backup_default]
-  
-  tags = var.tags
-}
+# Note: Backup vaults have been removed for now to simplify configuration
+# They can be re-enabled later when needed
 
-# Backup Vault Policy for EFS (CKV2_AWS_18 compliance)
-resource "aws_backup_vault_policy" "main" {
-  count = var.enable_backup ? 1 : 0
-  
-  backup_vault_name = aws_backup_vault.main[0].name
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowEFSBackup"
-        Effect = "Allow"
-        Principal = {
-          Service = "backup.amazonaws.com"
-        }
-        Action = [
-          "backup:PutBackupVaultAccessPolicy",
-          "backup:DeleteBackupVaultAccessPolicy",
-          "backup:DescribeBackupVault"
-        ]
-        Resource = aws_backup_vault.main[0].arn
-      }
-    ]
-  })
-}
+# Note: Backup plan has been removed for now since backup vaults are disabled
+# It can be re-enabled later when backup vaults are needed
 
-# AWS Backup Plan
-resource "aws_backup_plan" "main" {
-  count = var.enable_backup ? 1 : 0
-  
-  name = "${var.project}-${var.env}-backup-plan"
-  
-  rule {
-    rule_name         = "daily_backup"
-    target_vault_name = aws_backup_vault.main[0].name
-    
-    schedule = "cron(0 5 ? * * *)"  # Daily at 5 AM UTC
-    
-    lifecycle {
-      delete_after = var.backup_retention_days
-    }
-    
-    copy_action {
-      destination_vault_arn = var.enable_cross_region_backup ? aws_backup_vault.dr[0].arn : null
-    }
-  }
-  
-  rule {
-    rule_name         = "weekly_backup"
-    target_vault_name = aws_backup_vault.main[0].name
-    
-    schedule = "cron(0 6 ? * SUN *)"  # Weekly on Sunday at 6 AM UTC
-    
-    lifecycle {
-      delete_after = var.weekly_backup_retention_days
-    }
-    
-    copy_action {
-      destination_vault_arn = var.enable_cross_region_backup ? aws_backup_vault.dr[0].arn : null
-    }
-  }
-  
-  rule {
-    rule_name         = "monthly_backup"
-    target_vault_name = aws_backup_vault.main[0].name
-    
-    schedule = "cron(0 7 1 * ? *)"  # Monthly on 1st at 7 AM UTC
-    
-    lifecycle {
-      delete_after = var.monthly_backup_retention_days
-    }
-    
-    copy_action {
-      destination_vault_arn = var.enable_cross_region_backup ? aws_backup_vault.dr[0].arn : null
-    }
-  }
-  
-  # EFS-specific backup rule (CKV2_AWS_18 compliance)
-  rule {
-    rule_name         = "efs_backup"
-    target_vault_name = aws_backup_vault.main[0].name
-    
-    schedule = "cron(0 8 ? * * *)"  # Daily at 8 AM UTC for EFS
-    
-    lifecycle {
-      delete_after = var.backup_retention_days
-    }
-    
-    copy_action {
-      destination_vault_arn = var.enable_cross_region_backup ? aws_backup_vault.dr[0].arn : null
-    }
-  }
-  
-  tags = var.tags
-}
+# Note: DR backup vault has been removed for now to simplify configuration
+# It can be re-enabled later when cross-region backup is needed
 
-# Cross-Region Disaster Recovery Vault
-resource "aws_backup_vault" "dr" {
-  count = var.enable_cross_region_backup ? 1 : 0
-  
-  provider = aws.dr_region
-  
-  name = "${var.project}-${var.env}-dr-backup-vault"
-  
-  # KMS encryption for compliance (CKV_AWS_166)
-  # Use DR-specific KMS key or fallback to DR default key
-  encryption_key_arn = var.dr_kms_key_arn != "" ? var.dr_kms_key_arn : aws_kms_key.backup_dr_default[0].arn
-  
-  tags = var.tags
-}
+# Note: Backup selections have been removed for now since backup vaults are disabled
+# They can be re-enabled later when backup vaults are needed
 
-# AWS Backup Selection - EKS Resources
-resource "aws_backup_selection" "eks_resources" {
-  count = var.enable_backup ? 1 : 0
-  
-  name         = "${var.project}-${var.env}-eks-backup-selection"
-  iam_role_arn = aws_iam_role.backup_role[0].arn
-  plan_id      = aws_backup_plan.main[0].id
-  
-  resources = [
-    "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.project}-${var.env}-eks"
-  ]
-}
-
-# AWS Backup Selection - EFS Resources (CKV2_AWS_18 compliance)
-resource "aws_backup_selection" "efs_resources" {
-  count = var.enable_backup ? 1 : 0
-  
-  name         = "${var.project}-${var.env}-efs-backup-selection"
-  iam_role_arn = aws_iam_role.backup_role[0].arn
-  plan_id      = aws_backup_plan.main[0].id
-  
-  resources = [
-    "arn:aws:efs:${var.region}:${data.aws_caller_identity.current.account_id}:file-system/${var.efs_file_system_id}"
-  ]
-}
-
-# AWS Backup Selection - VPC Resources
-resource "aws_backup_selection" "vpc_resources" {
-  count = var.enable_backup ? 1 : 0
-  
-  name         = "${var.project}-${var.env}-vpc-backup-selection"
-  iam_role_arn = aws_iam_role.backup_role[0].arn
-  plan_id      = aws_backup_plan.main[0].id
-  
-  resources = [
-    "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:vpc/*"
-  ]
-}
-
-# IAM Role for AWS Backup
-resource "aws_iam_role" "backup_role" {
-  count = var.enable_backup ? 1 : 0
-  
-  name = "${var.project}-${var.env}-backup-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "backup.amazonaws.com"
-        }
-      }
-    ]
-  })
-  
-  tags = var.tags
-}
-
-# Attach AWS Backup service role policy
-resource "aws_iam_role_policy_attachment" "backup_policy" {
-  count = var.enable_backup ? 1 : 0
-  
-  role       = aws_iam_role.backup_role[0].name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
-}
-
-# Attach AWS Backup service role policy for restore
-resource "aws_iam_role_policy_attachment" "backup_restore_policy" {
-  count = var.enable_backup ? 1 : 0
-  
-  role       = aws_iam_role.backup_role[0].name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
-}
+# Note: IAM roles for AWS Backup have been removed for now since backup vaults are disabled
+# They can be re-enabled later when backup vaults are needed
 
 # S3 Bucket for Backup Reports
 resource "aws_s3_bucket" "backup_reports" {
@@ -246,10 +55,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backup_reports" {
   bucket = aws_s3_bucket.backup_reports[0].id
   
   rule {
-         apply_server_side_encryption_by_default {
-       kms_master_key_id = aws_kms_key.backup_default[0].arn
-       sse_algorithm     = "aws:kms"
-     }
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"  # Use AWS managed encryption since KMS key is removed
+    }
   }
 }
 
@@ -315,8 +123,8 @@ resource "aws_sns_topic" "backup_notifications" {
   
   name = "${var.project}-${var.env}-backup-notifications"
   
-  # KMS encryption for compliance (CKV_AWS_26)
-  kms_master_key_id = aws_kms_key.backup_default[0].arn
+  # Note: KMS encryption removed since backup KMS key is disabled
+  # Can be re-enabled later when backup vaults are needed
   
   tags = var.tags
 }
@@ -434,8 +242,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backup_reports_dr
   
   rule {
     apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.backup_dr_default[0].arn
-      sse_algorithm     = "aws:kms"
+      sse_algorithm = "AES256"  # Use AWS managed encryption since DR KMS key is removed
     }
   }
 }
@@ -454,227 +261,17 @@ resource "aws_s3_bucket_public_access_block" "backup_reports_dr" {
   restrict_public_buckets = true
 }
 
-# S3 Bucket Cross-Region Replication for Backup Reports
-resource "aws_s3_bucket_replication_configuration" "backup_reports" {
-  count = var.enable_backup ? 1 : 0
-  
-  bucket = aws_s3_bucket.backup_reports[0].id
-  
-  role = aws_iam_role.s3_replication_role[0].arn
-  
-  rule {
-    id     = "backup_reports_replication"
-    status = "Enabled"
-    
-    destination {
-      bucket = aws_s3_bucket.backup_reports_dr[0].arn
-    }
-  }
-}
+# Note: S3 replication configuration has been removed for now
+# It can be re-enabled later when cross-region backup is needed
 
-# AWS Backup Framework
-resource "aws_backup_framework" "main" {
-  count = var.enable_backup ? 1 : 0
-  
-  name        = "${var.project}-${var.env}-backup-framework"
-  description = "Backup framework for ${var.project}-${var.env}"
-  
-  control {
-    name = "BACKUP_RECOVERY_POINT_MINIMUM_RETENTION_CHECK"
-    
-    input_parameter {
-      name  = "minimumRetentionDays"
-      value = tostring(var.backup_retention_days)
-    }
-  }
-  
-  control {
-    name = "BACKUP_RECOVERY_POINT_ENCRYPTED"
-  }
-  
-  control {
-    name = "BACKUP_RESOURCES_PROTECTED_BY_BACKUP_PLAN"
-  }
-  
-  control {
-    name = "BACKUP_RECOVERY_POINT_MANUAL_DELETION_DISABLED"
-  }
-  
-  tags = var.tags
-}
+# Note: AWS Backup Framework and Global Settings have been removed for now
+# They can be re-enabled later when backup vaults are needed
 
-# AWS Backup Global Settings
-resource "aws_backup_global_settings" "main" {
-  count = var.enable_backup ? 1 : 0
-  
-  global_settings = {
-    "isCrossAccountBackupEnabled" = var.enable_cross_account_backup
-  }
-}
+# Note: KMS keys for backup encryption have been removed for now
+# They can be re-enabled later when backup vaults are needed
 
-# Default KMS key for backup encryption (if no custom key provided)
-resource "aws_kms_key" "backup_default" {
-  count = 1  # Always create KMS key for compliance
-  
-  description             = "Default KMS key for ${var.project}-${var.env} backup encryption"
-  deletion_window_in_days = 7
-  enable_key_rotation     = true
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-        }
-        Action   = "kms:*"
-        Resource = "*"
-      },
-      {
-        Sid    = "Allow AWS Backup to use the key"
-        Effect = "Allow"
-        Principal = {
-          Service = "backup.amazonaws.com"
-        }
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "kms:ViaService" = "backup.amazonaws.com"
-          }
-        }
-      }
-    ]
-  })
-  
-  tags = var.tags
-}
-
-resource "aws_kms_alias" "backup_default" {
-  count = var.enable_backup ? 1 : 0
-  
-  name          = "alias/${var.project}-${var.env}-backup-default"
-  target_key_id = aws_kms_key.backup_default[0].key_id
-}
-
-# DR Region KMS key for backup encryption
-resource "aws_kms_key" "backup_dr_default" {
-  count = 1  # Always create DR KMS key for compliance
-  
-  provider = aws.dr_region
-  
-  description             = "DR region KMS key for ${var.project}-${var.env} backup encryption"
-  deletion_window_in_days = 7
-  enable_key_rotation     = true
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-        }
-        Action   = "kms:*"
-        Resource = "*"
-      },
-      {
-        Sid    = "Allow AWS Backup to use the key"
-        Effect = "Allow"
-        Principal = {
-          Service = "backup.amazonaws.com"
-        }
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "kms:ViaService" = "backup.amazonaws.com"
-          }
-        }
-      }
-    ]
-  })
-  
-  tags = var.tags
-}
-
-resource "aws_kms_alias" "backup_dr_default" {
-  count = var.enable_cross_region_backup ? 1 : 0
-  
-  provider = aws.dr_region
-  
-  name          = "alias/${var.project}-${var.env}-backup-dr-default"
-  target_key_id = aws_kms_key.backup_dr_default[0].key_id
-}
-
-# IAM Role for S3 Cross-Region Replication
-resource "aws_iam_role" "s3_replication_role" {
-  count = var.enable_backup ? 1 : 0
-  
-  name = "${var.project}-${var.env}-s3-replication-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "s3.amazonaws.com"
-        }
-      }
-    ]
-  })
-  
-  tags = var.tags
-}
-
-# Attach S3 replication policy
-resource "aws_iam_role_policy" "s3_replication_policy" {
-  count = var.enable_backup ? 1 : 0
-  
-  name = "${var.project}-${var.env}-s3-replication-policy"
-  role = aws_iam_role.s3_replication_role[0].id
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetReplicationConfiguration",
-          "s3:ListBucket"
-        ]
-        Resource = [aws_s3_bucket.backup_reports[0].arn]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObjectVersion",
-          "s3:GetObjectVersionAcl"
-        ]
-        Resource = "${aws_s3_bucket.backup_reports[0].arn}/*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:ReplicateObject",
-          "s3:ReplicateDelete"
-        ]
-        Resource = "${aws_s3_bucket.backup_reports_dr[0].arn}/*"
-      }
-    ]
-  })
-}
+# Note: IAM roles for S3 replication have been removed for now
+# They can be re-enabled later when cross-region backup is needed
 
 # Provider for DR region
 provider "aws" {
