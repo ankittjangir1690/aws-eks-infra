@@ -16,9 +16,6 @@ resource "aws_efs_file_system" "main" {
   # Use KMS CMK for encryption if provided, otherwise use AWS managed key
   kms_key_id = var.kms_key_arn != "" ? var.kms_key_arn : null
   
-  # Backup configuration
-  availability_zone_id = var.availability_zone_id
-  
   # Lifecycle policy
   lifecycle_policy {
     transition_to_ia = "AFTER_30_DAYS"
@@ -89,10 +86,6 @@ resource "aws_efs_mount_target" "main" {
   
   # IP address (optional - AWS will assign if not specified)
   ip_address = var.mount_target_ip_addresses[count.index] != "" ? var.mount_target_ip_addresses[count.index] : null
-
-  tags = merge(var.tags, {
-    Name = "${var.name}-mount-target-${count.index + 1}"
-  })
 }
 
 # EFS Access Point (optional)

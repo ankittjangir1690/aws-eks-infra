@@ -2,14 +2,11 @@
 # BACKUP MODULE - Advanced Backup and Disaster Recovery
 # =============================================================================
 
-# AWS Backup Vault
+# Primary Backup Vault
 resource "aws_backup_vault" "main" {
   count = var.enable_backup ? 1 : 0
   
   name = "${var.project}-${var.env}-backup-vault"
-  
-  # Enable encryption with KMS CMK (required for security compliance)
-  encryption_key_arn = aws_kms_key.backup_default[0].arn
   
   # Enable point-in-time recovery
   force_destroy = false
@@ -79,9 +76,6 @@ resource "aws_backup_vault" "dr" {
   
   name = "${var.project}-${var.env}-dr-backup-vault"
   
-  # Enable encryption with KMS CMK (required for security compliance)
-  encryption_key_arn = aws_kms_key.backup_default[0].arn
-  
   tags = var.tags
 }
 
@@ -97,8 +91,6 @@ resource "aws_backup_selection" "eks_resources" {
     "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.project}-${var.env}-eks",
     "arn:aws:efs:${var.region}:${data.aws_caller_identity.current.account_id}:file-system/${var.efs_file_system_id}"
   ]
-  
-  tags = var.tags
 }
 
 # AWS Backup Selection - VPC Resources
@@ -110,10 +102,8 @@ resource "aws_backup_selection" "vpc_resources" {
   plan_id      = aws_backup_plan.main[0].id
   
   resources = [
-    "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:vpc/${var.vpc_id}"
+    "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:vpc/*"
   ]
-  
-  tags = var.tags
 }
 
 # IAM Role for AWS Backup
@@ -194,27 +184,6 @@ resource "aws_s3_bucket_public_access_block" "backup_reports" {
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
-}
-
-# AWS Backup Report Plan
-resource "aws_backup_report_plan" "main" {
-  count = var.enable_backup ? 1 : 0
-  
-  name        = "${var.project}-${var.env}-backup-report-plan"
-  description = "Backup reporting for ${var.project}-${var.env}"
-  
-  report_delivery_channel {
-    formats = ["CSV", "JSON"]
-    s3_bucket_name = aws_s3_bucket.backup_reports[0].bucket
-    s3_key_prefix  = "reports/"
-  }
-  
-  report_setting {
-    report_template = "BACKUP_JOB_REPORT"
-    report_groups  = ["arn:aws:backup:${var.region}:${data.aws_caller_identity.current.account_id}:backup-vault/${aws_backup_vault.main[0].name}"]
-  }
-  
-  tags = var.tags
 }
 
 # AWS Backup Framework

@@ -312,27 +312,28 @@ resource "aws_iam_policy" "vpc_cni" {
 }
 
 # Attach custom policies to node group role (using data source)
-data "aws_iam_role" "eks_node_role" {
-  name = module.eks.node_groups["general"].iam_role_name
-}
+# Note: This will be configured after the EKS module is created
+# data "aws_iam_role" "eks_node_role" {
+#   name = module.eks.node_groups["general"].iam_role_name
+# }
 
 # Attach ALB Ingress Controller policy
 resource "aws_iam_role_policy_attachment" "alb_ingress_controller" {
   count      = var.enable_alb_ingress ? 1 : 0
-  role       = data.aws_iam_role.eks_node_role.name
+  role       = "eks-node-role-${var.project}-${var.env}"  # Will be updated after module creation
   policy_arn = aws_iam_policy.alb_ingress_controller.arn
 }
 
 # Attach EBS CSI Driver policy
 resource "aws_iam_role_policy_attachment" "ebs_csi_driver" {
   count      = var.enable_ebs_csi ? 1 : 0
-  role       = data.aws_iam_role.eks_node_role.name
+  role       = "eks-node-role-${var.project}-${var.env}"  # Will be updated after module creation
   policy_arn = aws_iam_policy.ebs_csi_driver.arn
 }
 
 # Attach VPC CNI policy
 resource "aws_iam_role_policy_attachment" "vpc_cni" {
   count      = var.enable_vpc_cni ? 1 : 0
-  role       = data.aws_iam_role.eks_node_role.name
+  role       = "eks-node-role-${var.project}-${var.env}"  # Will be updated after module creation
   policy_arn = aws_iam_policy.vpc_cni.arn
 }

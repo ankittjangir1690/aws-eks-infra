@@ -137,36 +137,8 @@ resource "aws_security_group" "eks_nodes" {
   })
 }
 
-# EKS Cluster IAM Role Mapping
-resource "aws_auth_configmap" "aws_auth" {
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
-  }
-
-  data = {
-    mapRoles = yamlencode([
-      {
-        rolearn  = module.eks.node_groups["general"].iam_role_name
-        username = "system:node:{{EC2PrivateDNSName}}"
-        groups   = ["system:bootstrappers", "system:nodes"]
-      }
-    ])
-    
-    mapUsers = yamlencode([
-      for user in var.eks_admin_users : {
-        userarn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${user}"
-        username = user
-        groups   = ["system:masters"]
-      }
-    ])
-  }
-
-  depends_on = [module.eks]
-}
-
-# Get current AWS account ID
-data "aws_caller_identity" "current" {}
+# EKS Cluster IAM Role Mapping - Removed due to unsupported resource type
+# The aws-auth ConfigMap is now managed automatically by the EKS module
 
 # CloudWatch Log Group for EKS Cluster (with KMS encryption)
 resource "aws_cloudwatch_log_group" "eks_cluster" {
@@ -229,38 +201,8 @@ resource "aws_kms_alias" "eks_logs" {
   target_key_id = aws_kms_key.eks_logs[0].key_id
 }
 
-# EKS Control Plane Logging
-resource "aws_eks_cluster" "main" {
-  count = var.enable_eks_control_plane_logging ? 1 : 0
-  
-  name     = "${var.project}-${var.env}-eks"
-  role_arn = module.eks.cluster_iam_role_name
-  version  = var.cluster_version
-
-  vpc_config {
-    subnet_ids              = var.private_subnets_eks
-    endpoint_private_access = true
-    endpoint_public_access  = false  # Disable public endpoint for security
-    public_access_cidrs     = []     # No public access allowed
-  }
-
-  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
-
-  # Enable secrets encryption
-  encryption_config {
-    resources = ["secrets"]
-    provider {
-      key_arn = aws_kms_key.eks_secrets[0].arn
-    }
-  }
-
-  depends_on = [
-    aws_cloudwatch_log_group.eks_cluster,
-    aws_kms_key.eks_secrets
-  ]
-
-  tags = var.tags
-}
+# EKS Control Plane Logging - Handled by the EKS module
+# The module.eks already handles cluster creation with logging enabled
 
 # KMS key for EKS secrets encryption
 resource "aws_kms_key" "eks_secrets" {

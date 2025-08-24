@@ -1,10 +1,5 @@
 terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
+  # required_providers moved to backend.tf to avoid duplication
 }
 
 # Main Terraform configuration for AWS EKS Infrastructure
@@ -106,7 +101,7 @@ module "monitoring" {
   enable_evidently          = var.enable_evidently
   enable_rum                = var.enable_rum
   alarm_email               = var.alarm_email
-  alarm_actions             = var.enable_sns_notifications ? [module.monitoring.sns_topic_arn] : []
+  alarm_actions             = []  # Will be populated after module creation
   rum_domain                = var.rum_domain
   
   tags = local.common_tags
@@ -169,5 +164,30 @@ locals {
     SecurityLevel = "High"
     Compliance   = "SOC2"
     BackupPolicy = "Daily"
+  }
+  
+  # EKS node sizing validation
+  eks_node_min_size = var.eks_node_min_size
+  eks_node_desired_size = var.eks_node_desired_size
+  eks_node_max_size = var.eks_node_max_size
+}
+
+# Validation for EKS node sizing
+resource "null_resource" "eks_node_validation" {
+  lifecycle {
+    precondition {
+      condition     = var.eks_node_min_size <= var.eks_node_desired_size
+      error_message = "EKS node minimum size must be less than or equal to desired size."
+    }
+    
+    precondition {
+      condition     = var.eks_node_desired_size <= var.eks_node_max_size
+      error_message = "EKS node desired size must be less than or equal to maximum size."
+    }
+    
+    precondition {
+      condition     = var.eks_node_min_size >= 1
+      error_message = "EKS node minimum size must be at least 1."
+    }
   }
 }

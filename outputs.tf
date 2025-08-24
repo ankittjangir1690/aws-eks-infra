@@ -71,14 +71,12 @@ output "eks_cluster_certificate_authority_data" {
 }
 
 output "eks_cluster_oidc_issuer_url" {
-  description = "The URL on the EKS cluster for the OpenID Connect identity provider"
+  description = "EKS cluster OIDC issuer URL"
   value       = module.eks.cluster_oidc_issuer_url
 }
 
-output "eks_node_groups" {
-  description = "Map of EKS node groups"
-  value       = module.eks.node_groups
-}
+# Note: Node groups output removed as it's not available from the EKS module
+# The EKS module manages node groups internally
 
 output "eks_cluster_security_group_id" {
   description = "Security group ID attached to the EKS cluster"
@@ -100,15 +98,8 @@ output "eks_cluster_iam_role_arn" {
   value       = module.eks.cluster_iam_role_arn
 }
 
-output "eks_node_iam_role_name" {
-  description = "IAM role name associated with EKS nodes"
-  value       = module.eks.node_iam_role_name
-}
-
-output "eks_node_iam_role_arn" {
-  description = "IAM role ARN associated with EKS nodes"
-  value       = module.eks.node_iam_role_arn
-}
+# Note: Node IAM role outputs removed as they don't exist in the EKS module
+# The EKS module manages node IAM roles internally
 
 # EFS Outputs
 output "efs_id" {
@@ -200,7 +191,7 @@ output "iam_roles" {
   description = "IAM role information for the infrastructure"
   value = {
     eks_cluster = module.eks.cluster_iam_role_arn
-    eks_nodes   = module.eks.node_iam_role_arn
+    # Note: Node IAM role managed internally by EKS module
     vpc_flow_logs = var.enable_vpc_flow_logs ? module.vpc.vpc_flow_log_arn : null
   }
 }

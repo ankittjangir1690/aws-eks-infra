@@ -25,22 +25,22 @@ provider "aws" {
   }
 }
 
-# Provider version constraints
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-      configuration_aliases = [aws.primary, aws.secondary]
-    }
-  }
-  
-  # Uncomment for production use with S3 backend
-  # backend "s3" {
-  #   bucket         = "your-terraform-state-bucket"
-  #   key            = "aws-eks-infra/terraform.tfstate"
-  #   region         = "ap-south-1"
-  #   dynamodb_table = "terraform-state-lock"
-  #   encrypt        = true
-  # }
-}
+# Provider version constraints moved to backend.tf to avoid duplication
+# terraform {
+#   required_providers {
+#     aws = {
+#       source  = "hashicorp/aws"
+#       version = "~> 5.0"
+#       configuration_aliases = [aws.primary, aws.secondary]
+#     }
+#   }
+#   
+#   # Uncomment for production use with S3 backend
+#   # backend "s3" {
+#     bucket         = "your-terraform-state-bucket"
+#     key            = "aws-eks-infra/terraform.tfstate"
+#     region         = "ap-south-1"
+#     dynamodb_table = "terraform-state-lock"
+#     encrypt        = true
+#   # }
+# }

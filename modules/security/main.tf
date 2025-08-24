@@ -14,10 +14,6 @@ resource "aws_guardduty_detector" "main" {
 # AWS Security Hub - Security Findings
 resource "aws_securityhub_account" "main" {
   count = var.enable_security_hub ? 1 : 0
-  
-  enable_default_standards = true
-  
-  tags = var.tags
 }
 
 # AWS Config - Compliance Monitoring
@@ -29,10 +25,7 @@ resource "aws_config_configuration_recorder" "main" {
   
   recording_group {
     all_supported = true
-    include_global_resources = true
   }
-  
-  depends_on = [aws_config_delivery_channel.main]
 }
 
 resource "aws_config_delivery_channel" "main" {
@@ -134,6 +127,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "config_bucket" {
   rule {
     id     = "config_lifecycle"
     status = "Enabled"
+    
+    filter {
+      prefix = ""
+    }
 
     transition {
       days          = 30
@@ -356,6 +353,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "cloudtrail_bucket" {
   rule {
     id     = "cloudtrail_lifecycle"
     status = "Enabled"
+    
+    filter {
+      prefix = ""
+    }
 
     transition {
       days          = 30
@@ -501,44 +502,6 @@ resource "aws_inspector2_enabler" "main" {
   
   account_ids    = [data.aws_caller_identity.current.account_id]
   resource_types = ["EC2", "ECR", "LAMBDA"]
-}
-
-# Inspector Assessment Template
-resource "aws_inspector_assessment_template" "main" {
-  count = var.enable_inspector ? 1 : 0
-  
-  name       = "${var.project}-${var.env}-assessment"
-  target_arn = aws_inspector_target.main[0].arn
-  arn        = aws_inspector_target.main[0].arn
-  
-  duration = 3600
-  
-  rules_package_arns = [
-    "arn:aws:inspector:us-east-1:316112463485:rulespackage/0-9hgA516p",
-    "arn:aws:inspector:us-east-1:316112463485:rulespackage/0-H5hpSawc",
-    "arn:aws:inspector:us-east-1:316112463485:rulespackage/0-JJOtZiqQ",
-    "arn:aws:inspector:us-east-1:316112463485:rulespackage/0-vg5GGHSD"
-  ]
-  
-  depends_on = [aws_inspector2_enabler.main]
-}
-
-# Inspector Target
-resource "aws_inspector_target" "main" {
-  count = var.enable_inspector ? 1 : 0
-  
-  name = "${var.project}-${var.env}-target"
-  
-  resource_group_arn = aws_inspector_resource_group.main[0].arn
-}
-
-# Inspector Resource Group
-resource "aws_inspector_resource_group" "main" {
-  count = var.enable_inspector ? 1 : 0
-  
-  name = "${var.project}-${var.env}-resource-group"
-  
-  tags = var.tags
 }
 
 # Get current AWS account ID

@@ -126,8 +126,8 @@ variable "eks_node_max_size" {
   type        = number
   default     = 5
   validation {
-    condition     = var.eks_node_max_size >= var.eks_node_desired_size
-    error_message = "Maximum size must be greater than or equal to desired size."
+    condition     = var.eks_node_max_size >= 1
+    error_message = "Maximum size must be at least 1."
   }
 }
 
