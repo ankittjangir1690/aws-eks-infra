@@ -1,6 +1,19 @@
 # =============================================================================
-# BACKUP MODULE - Advanced Backup and Disaster Recovery
+# BACKUP MODULE - AWS Backup Configuration
 # =============================================================================
+
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+# Random string for unique bucket names
+resource "random_string" "bucket_suffix" {
+  count = var.enable_backup ? 1 : 0
+  
+  length  = 8
+  special = false
+  upper   = false
+}
 
 # Primary Backup Vault
 resource "aws_backup_vault" "main" {
@@ -186,6 +199,65 @@ resource "aws_s3_bucket_public_access_block" "backup_reports" {
   restrict_public_buckets = true
 }
 
+# S3 Bucket Access Logging
+resource "aws_s3_bucket_logging" "backup_reports" {
+  count = var.enable_backup ? 1 : 0
+  
+  bucket = aws_s3_bucket.backup_reports[0].id
+  
+  target_bucket = aws_s3_bucket.backup_reports[0].id
+  target_prefix = "logs/"
+}
+
+# S3 Bucket Lifecycle Configuration
+resource "aws_s3_bucket_lifecycle_configuration" "backup_reports" {
+  count = var.enable_backup ? 1 : 0
+  
+  bucket = aws_s3_bucket.backup_reports[0].id
+  
+  rule {
+    id     = "backup_reports_lifecycle"
+    status = "Enabled"
+    
+    filter {
+      prefix = ""
+    }
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 2555  # 7 years for compliance
+    }
+
+    # Abort incomplete multipart uploads after 7 days
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+# S3 Bucket Event Notifications
+resource "aws_s3_bucket_notification" "backup_reports" {
+  count = var.enable_backup ? 1 : 0
+  
+  bucket = aws_s3_bucket.backup_reports[0].id
+
+  # Use SNS notification instead of Lambda (more supported)
+  topic {
+    topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-backup-notifications"
+    events    = ["s3:ObjectCreated:*"]
+    filter_prefix = "reports/"
+  }
+}
+
 # AWS Backup Framework
 resource "aws_backup_framework" "main" {
   count = var.enable_backup ? 1 : 0
@@ -225,18 +297,6 @@ resource "aws_backup_global_settings" "main" {
     "isCrossAccountBackupEnabled" = var.enable_cross_account_backup
   }
 }
-
-# Random string for bucket names
-resource "random_string" "bucket_suffix" {
-  count = var.enable_backup ? 1 : 0
-  
-  length  = 8
-  special = false
-  upper   = false
-}
-
-# Get current AWS account ID
-data "aws_caller_identity" "current" {}
 
 # Default KMS key for backup encryption (if no custom key provided)
 resource "aws_kms_key" "backup_default" {

@@ -2,13 +2,27 @@
 # SECURITY MODULE - Advanced Security Features
 # =============================================================================
 
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 # AWS GuardDuty - Threat Detection
 resource "aws_guardduty_detector" "main" {
   count = var.enable_guardduty ? 1 : 0
   
   enable = true
   
+  # Enable for specific organization and region
+  finding_publishing_frequency = "SIX_HOURS"
+  
   tags = var.tags
+}
+
+# GuardDuty Organization Configuration (if in an organization)
+resource "aws_guardduty_organization_admin_account" "main" {
+  count = var.enable_guardduty ? 1 : 0
+  
+  admin_account_id = data.aws_caller_identity.current.account_id
 }
 
 # AWS Security Hub - Security Findings
@@ -379,6 +393,20 @@ resource "aws_s3_bucket_lifecycle_configuration" "cloudtrail_bucket" {
   }
 }
 
+# CloudTrail bucket event notifications
+resource "aws_s3_bucket_notification" "cloudtrail_bucket" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  bucket = aws_s3_bucket.cloudtrail_bucket[0].id
+
+  # Use SNS notification instead of Lambda (more supported)
+  topic {
+    topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-cloudtrail-notifications"
+    events    = ["s3:ObjectCreated:*"]
+    filter_prefix = "cloudtrail/"
+  }
+}
+
 # Random string for bucket names
 resource "random_string" "bucket_suffix" {
   count = (var.enable_config || var.enable_cloudtrail) ? 1 : 0
@@ -503,6 +531,3 @@ resource "aws_inspector2_enabler" "main" {
   account_ids    = [data.aws_caller_identity.current.account_id]
   resource_types = ["EC2", "ECR", "LAMBDA"]
 }
-
-# Get current AWS account ID
-data "aws_caller_identity" "current" {}

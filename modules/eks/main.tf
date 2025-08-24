@@ -4,8 +4,7 @@
 
 # EKS Cluster
 module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "19.21.0"  # Specific version for reproducible builds - this is a fixed version, not a range
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=v19.21.0"
 
   cluster_name    = "${var.project}-${var.env}-eks"
   cluster_version = var.cluster_version
@@ -60,7 +59,7 @@ module "eks" {
     # Enable detailed monitoring
     enable_monitoring = true
     
-    # Security configurations
+    # Security configurations - attach the security group to nodes
     vpc_security_group_ids = [aws_security_group.eks_nodes.id]
     
     # IAM role configuration - use the module's default role

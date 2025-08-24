@@ -38,3 +38,21 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_waf" {
+  description = "Enable WAF protection for the ALB"
+  type        = bool
+  default     = true
+}
+
+variable "waf_web_acl_arn" {
+  description = "ARN of the WAF Web ACL to associate with the ALB"
+  type        = string
+  default     = ""
+}
+
+variable "dr_region" {
+  description = "Disaster recovery region for cross-region replication"
+  type        = string
+  default     = ""
+}

@@ -140,6 +140,9 @@ module "backup" {
 #   acm_certificate_arn   = var.acm_certificate_arn
 #   allowed_cidr_blocks   = var.allowed_public_cidrs
 #   enable_access_logs    = var.enable_alb_access_logs
+#   enable_waf            = var.enable_waf
+#   waf_web_acl_arn      = module.security.waf_web_acl_arn
+#   dr_region             = var.dr_region
 #   
 #   tags = local.common_tags
 # }

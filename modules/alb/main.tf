@@ -1,3 +1,19 @@
+# =============================================================================
+# ALB MODULE - Application Load Balancer Configuration
+# =============================================================================
+
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+# Random string for unique bucket names
+resource "random_string" "bucket_suffix" {
+  count  = var.enable_access_logs ? 1 : 0
+  length  = 8
+  special = false
+  upper   = false
+}
+
 resource "aws_security_group" "alb_sg" {
   name        = "${var.project}-${var.env}-alb-sg"
   description = "Security group for Application Load Balancer - allows HTTP and HTTPS traffic from specified CIDR blocks"
@@ -64,6 +80,14 @@ resource "aws_lb" "myapp" {
   tags = merge(var.tags, {
     Name = "${var.project}-${var.env}-alb"
   })
+}
+
+# Associate ALB with WAF for protection
+resource "aws_wafv2_web_acl_association" "alb" {
+  count = var.enable_waf ? 1 : 0
+  
+  resource_arn = aws_lb.myapp.arn
+  web_acl_arn  = var.waf_web_acl_arn
 }
 
 # ALB Listener Rule to drop HTTP headers and redirect to HTTPS
@@ -231,6 +255,15 @@ resource "aws_s3_bucket_public_access_block" "alb_logs" {
   restrict_public_buckets = true
 }
 
+# S3 Bucket Access Logging
+resource "aws_s3_bucket_logging" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  target_bucket = aws_s3_bucket.alb_logs[0].id
+  target_prefix = "logs/"
+}
+
 # S3 Bucket Lifecycle Configuration
 resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
   count  = var.enable_access_logs ? 1 : 0
@@ -239,6 +272,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
   rule {
     id     = "alb_logs_lifecycle"
     status = "Enabled"
+    
+    filter {
+      prefix = ""
+    }
 
     transition {
       days          = 30
@@ -251,7 +288,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
     }
 
     expiration {
-      days = 365
+      days = 2555  # 7 years for compliance
     }
 
     # Abort incomplete multipart uploads after 7 days
@@ -261,25 +298,72 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
   }
 }
 
-# S3 Bucket Access Logging
-resource "aws_s3_bucket_logging" "alb_logs" {
+# S3 Bucket Event Notifications
+resource "aws_s3_bucket_notification" "alb_logs" {
   count  = var.enable_access_logs ? 1 : 0
   bucket = aws_s3_bucket.alb_logs[0].id
 
-  target_bucket = aws_s3_bucket.alb_logs[0].id
-  target_prefix = "logs/"
+  # Use SNS notification instead of Lambda (more supported)
+  topic {
+    topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-alb-notifications"
+    events    = ["s3:ObjectCreated:*"]
+    filter_prefix = "alb-logs/"
+  }
 }
 
-# Random string for unique bucket names
-resource "random_string" "bucket_suffix" {
-  count   = var.enable_access_logs ? 1 : 0
-  length  = 8
-  special = false
-  upper   = false
+# S3 Bucket Cross-Region Replication
+resource "aws_s3_bucket_replication_configuration" "alb_logs" {
+  count = var.enable_access_logs ? 1 : 0
+  
+  bucket = aws_s3_bucket.alb_logs[0].id
+  role   = aws_iam_role.alb_logs_replication[0].arn
+
+  rule {
+    id     = "alb_logs_replication"
+    status = "Enabled"
+
+    destination {
+      bucket = "arn:aws:s3:::${var.project}-${var.env}-alb-logs-dr-${var.dr_region}"
+      storage_class = "STANDARD_IA"
+    }
+
+    source_selection_criteria {
+      sse_kms_encrypted_objects {
+        status = "Enabled"
+      }
+    }
+  }
 }
 
-# Data source for current AWS account ID
-data "aws_caller_identity" "current" {}
+# IAM Role for S3 Replication
+resource "aws_iam_role" "alb_logs_replication" {
+  count = var.enable_access_logs ? 1 : 0
+  
+  name = "${var.project}-${var.env}-alb-logs-replication-role"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "s3.amazonaws.com"
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+# Attach S3 replication policy
+resource "aws_iam_role_policy_attachment" "alb_logs_replication" {
+  count = var.enable_access_logs ? 1 : 0
+  
+  role       = aws_iam_role.alb_logs_replication[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSS3ReplicationServiceRole"
+}
 
 # S3 Bucket Policy for ALB Logging
 resource "aws_s3_bucket_policy" "alb_logs" {

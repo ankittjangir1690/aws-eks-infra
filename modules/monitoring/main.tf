@@ -1,6 +1,10 @@
 # =============================================================================
-# MONITORING MODULE - Advanced Monitoring and Alerting
+# MONITORING MODULE - CloudWatch Monitoring and Alerting
 # =============================================================================
+
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 # CloudWatch Dashboard for EKS Infrastructure
 resource "aws_cloudwatch_dashboard" "eks_infrastructure" {
@@ -226,13 +230,45 @@ resource "aws_sns_topic" "alarms" {
   tags = var.tags
 }
 
-# KMS key for SNS encryption
+# KMS key for SNS topic encryption
 resource "aws_kms_key" "sns_encryption" {
   count = var.enable_sns_notifications ? 1 : 0
   
   description             = "KMS key for SNS topic encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow SNS to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "sns.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "sns.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
   
   tags = var.tags
 }
