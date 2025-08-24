@@ -56,7 +56,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backup_reports" {
   
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"  # Use AWS managed encryption since KMS key is removed
+      kms_master_key_id = aws_kms_key.backup_encryption[0].arn
+      sse_algorithm     = "aws:kms"
     }
   }
 }
@@ -123,8 +124,8 @@ resource "aws_sns_topic" "backup_notifications" {
   
   name = "${var.project}-${var.env}-backup-notifications"
   
-  # Note: KMS encryption removed since backup KMS key is disabled
-  # Can be re-enabled later when backup vaults are needed
+  # KMS encryption for compliance (CKV_AWS_26)
+  kms_master_key_id = aws_kms_key.backup_encryption[0].arn
   
   tags = var.tags
 }
@@ -242,7 +243,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backup_reports_dr
   
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"  # Use AWS managed encryption since DR KMS key is removed
+      kms_master_key_id = aws_kms_key.backup_encryption[0].arn
+      sse_algorithm     = "aws:kms"
     }
   }
 }
@@ -261,17 +263,153 @@ resource "aws_s3_bucket_public_access_block" "backup_reports_dr" {
   restrict_public_buckets = true
 }
 
-# Note: S3 replication configuration has been removed for now
-# It can be re-enabled later when cross-region backup is needed
+# S3 Bucket Cross-Region Replication for Backup Reports (CKV_AWS_144 compliance)
+resource "aws_s3_bucket_replication_configuration" "backup_reports" {
+  count = var.enable_backup ? 1 : 0
+  
+  bucket = aws_s3_bucket.backup_reports[0].id
+  
+  role = aws_iam_role.s3_replication_role[0].arn
+  
+  rule {
+    id     = "backup_reports_replication"
+    status = "Enabled"
+    
+    destination {
+      bucket = aws_s3_bucket.backup_reports_dr[0].arn
+    }
+  }
+}
 
 # Note: AWS Backup Framework and Global Settings have been removed for now
 # They can be re-enabled later when backup vaults are needed
 
-# Note: KMS keys for backup encryption have been removed for now
-# They can be re-enabled later when backup vaults are needed
+# KMS key for backup encryption (required for SNS and S3 compliance)
+resource "aws_kms_key" "backup_encryption" {
+  count = var.enable_backup ? 1 : 0
+  
+  description             = "KMS key for ${var.project}-${var.env} backup encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow SNS to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "sns.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "sns.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "Allow S3 to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "s3.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "s3.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
 
-# Note: IAM roles for S3 replication have been removed for now
-# They can be re-enabled later when cross-region backup is needed
+resource "aws_kms_alias" "backup_encryption" {
+  count = var.enable_backup ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-backup-encryption"
+  target_key_id = aws_kms_key.backup_encryption[0].key_id
+}
+
+# IAM Role for S3 Cross-Region Replication (CKV_AWS_144 compliance)
+resource "aws_iam_role" "s3_replication_role" {
+  count = var.enable_backup ? 1 : 0
+  
+  name = "${var.project}-${var.env}-s3-replication-role"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "s3.amazonaws.com"
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+# Attach S3 replication policy
+resource "aws_iam_role_policy" "s3_replication_policy" {
+  count = var.enable_backup ? 1 : 0
+  
+  name = "${var.project}-${var.env}-s3-replication-policy"
+  role = aws_iam_role.s3_replication_role[0].id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetReplicationConfiguration",
+          "s3:ListBucket"
+        ]
+        Resource = [aws_s3_bucket.backup_reports[0].arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObjectVersion",
+          "s3:GetObjectVersionAcl"
+        ]
+        Resource = "${aws_s3_bucket.backup_reports[0].arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ReplicateObject",
+          "s3:ReplicateDelete"
+        ]
+        Resource = "${aws_s3_bucket.backup_reports_dr[0].arn}/*"
+      }
+    ]
+  })
+}
 
 # Provider for DR region
 provider "aws" {

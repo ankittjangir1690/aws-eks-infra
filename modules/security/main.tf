@@ -188,6 +188,13 @@ resource "aws_wafv2_web_acl_logging_configuration" "main" {
       requirement = "MEETS_ANY"
     }
   }
+  
+  # Additional logging configuration to ensure compliance
+  redacted_fields {
+    single_header {
+      name = "authorization"
+    }
+  }
 }
 
 # KMS key for WAF CloudWatch logs encryption

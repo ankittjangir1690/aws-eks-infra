@@ -102,8 +102,15 @@ resource "aws_wafv2_web_acl_association" "alb_assoc" {
   depends_on = [aws_lb.myapp]
 }
 
-# Note: WAF logging configuration is managed by the security module
-# This ensures a single logging configuration across all WAF resources
+# WAF WebACL Association for Log4j Protection (CKV2_AWS_76 compliance)
+resource "aws_wafv2_web_acl_association" "alb_assoc" {
+  count = var.enable_waf ? 1 : 0
+  
+  resource_arn = aws_lb.myapp.arn
+  web_acl_arn  = var.waf_web_acl_arn
+  
+  depends_on = [aws_lb.myapp]
+}
 
 # ALB Listener Rule to drop HTTP headers and redirect to HTTPS
 resource "aws_lb_listener_rule" "drop_http_headers" {
