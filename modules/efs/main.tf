@@ -2,6 +2,10 @@
 # EFS MODULE - Secure EFS File System Configuration
 # =============================================================================
 
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 # EFS File System
 resource "aws_efs_file_system" "main" {
   creation_token = "${var.name}-efs"

@@ -33,10 +33,13 @@ provider "aws" {
 #       version = "~> 5.0"
 #       configuration_aliases = [aws.primary, aws.secondary]
 #     }
+#     random = {
+#       source  = "hashicorp/random"
+#       version = "~> 3.0"
+#     }
 #   }
 #   
 #   # Uncomment for production use with S3 backend
-#   # backend "s3" {
 #     bucket         = "your-terraform-state-bucket"
 #     key            = "aws-eks-infra/terraform.tfstate"
 #     region         = "ap-south-1"

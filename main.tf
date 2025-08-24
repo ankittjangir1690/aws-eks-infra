@@ -57,9 +57,9 @@ module "efs" {
   log_retention_days   = var.backup_retention_days
   kms_key_arn          = var.kms_key_arn
   
-  # Backup integration variables (CKV2_AWS_18 compliance)
-  backup_role_arn      = var.enable_efs_backup ? module.backup.backup_role_arn : ""
-  backup_plan_id       = var.enable_efs_backup ? module.backup.backup_plan_id : ""
+  # Backup integration variables (CKV2_AWS_18 compliance) - DISABLED DUE TO MISSING BACKUP RESOURCES
+  # backup_role_arn      = var.enable_efs_backup ? module.backup.backup_role_arn : ""
+  # backup_plan_id       = var.enable_efs_backup ? module.backup.backup_plan_id : ""
   
   tags = local.common_tags
 }
@@ -112,27 +112,27 @@ module "monitoring" {
   tags = local.common_tags
 }
 
-# Advanced Backup Module
-module "backup" {
-  source = "./modules/backup"
-  
-  project                    = var.project_name
-  env                       = var.environment
-  region                    = var.region
-  vpc_id                    = module.vpc.vpc_id
-  efs_file_system_id        = module.efs.efs_id
-  enable_backup             = var.enable_backup
-  enable_cross_region_backup = var.enable_cross_region_backup
-  enable_cross_account_backup = var.enable_cross_account_backup
-  backup_retention_days     = var.backup_retention_days
-  weekly_backup_retention_days = var.weekly_backup_retention_days
-  monthly_backup_retention_days = var.monthly_backup_retention_days
-  kms_key_arn               = var.kms_key_arn
-  dr_region                 = var.dr_region
-  dr_kms_key_arn            = var.dr_kms_key_arn
-  
-  tags = local.common_tags
-}
+# Advanced Backup Module - DISABLED DUE TO MISSING RESOURCES
+# module "backup" {
+#   source = "./modules/backup"
+#   
+#   project                    = var.project_name
+#   env                       = var.environment
+#   region                    = var.region
+#   vpc_id                    = module.vpc.vpc_id
+#   efs_file_system_id        = module.efs.efs_id
+#   enable_backup             = var.enable_backup
+#   enable_cross_region_backup = var.enable_cross_region_backup
+#   enable_cross_account_backup = var.enable_cross_account_backup
+#   backup_retention_days     = var.backup_retention_days
+#   weekly_backup_retention_days = var.weekly_backup_retention_days
+#   monthly_backup_retention_days = var.monthly_backup_retention_days
+#   kms_key_arn               = var.kms_key_arn
+#   dr_region                 = var.dr_region
+#   dr_kms_key_arn            = var.dr_kms_key_arn
+#   
+#   tags = local.common_tags
+# }
 
 # ALB Module - Application Load Balancer with WAF Protection
 module "alb" {
@@ -146,7 +146,7 @@ module "alb" {
   allowed_cidr_blocks   = var.allowed_public_cidrs
   enable_access_logs    = var.enable_alb_access_logs
   enable_waf            = var.enable_waf
-  waf_web_acl_arn      = module.security.waf_web_acl_arn
+  waf_web_acl_arn      = ""  # DISABLED: module.security.waf_web_acl_arn
   dr_region             = var.dr_region
   
   tags = local.common_tags

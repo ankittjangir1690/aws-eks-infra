@@ -72,7 +72,6 @@ resource "aws_lb" "myapp" {
   
   # Additional security hardening
   desync_mitigation_mode = "defensive"
-  desync_mitigation_type = "monitor"
 
   # Access logging
   access_logs {
@@ -169,6 +168,46 @@ resource "aws_lb_listener" "https" {
 # with all required security features including versioning, encryption,
 # public access blocks, lifecycle, and event notifications.
 
+# S3 Bucket for ALB Access Logs
+resource "aws_s3_bucket" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = "${var.project}-${var.env}-alb-logs-${random_string.alb_logs_suffix[0].result}"
+  
+  tags = var.tags
+}
+
+# Random string for unique bucket naming
+resource "random_string" "alb_logs_suffix" {
+  count   = var.enable_access_logs ? 1 : 0
+  length  = 8
+  special = false
+  upper   = false
+}
+
+# S3 Bucket Versioning
+resource "aws_s3_bucket_versioning" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+  
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# S3 Bucket Server-Side Encryption
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.alb_logs_encryption[0].arn
+      sse_algorithm     = "aws:kms"
+    }
+    bucket_key_enabled = true
+  }
+}
+
 # KMS key for ALB logs encryption
 resource "aws_kms_key" "alb_logs_encryption" {
   count = var.enable_access_logs ? 1 : 0
@@ -230,14 +269,14 @@ resource "aws_s3_bucket_public_access_block" "alb_logs" {
   restrict_public_buckets = true
 }
 
-# S3 Bucket Access Logging
-resource "aws_s3_bucket_logging" "alb_logs" {
-  count  = var.enable_access_logs ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
-
-  target_bucket = aws_s3_bucket.alb_logs[0].id
-  target_prefix = "logs/"
-}
+# S3 Bucket Access Logging - Disabled to prevent circular logging
+# resource "aws_s3_bucket_logging" "alb_logs" {
+#   count  = var.enable_access_logs ? 1 : 0
+#   bucket = aws_s3_bucket.alb_logs[0].id
+# 
+#   target_bucket = aws_s3_bucket.alb_logs[0].id
+#   target_prefix = "logs/"
+# }
 
 # S3 Bucket Lifecycle Configuration
 resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
@@ -273,72 +312,73 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
   }
 }
 
-# S3 Bucket Event Notifications
-resource "aws_s3_bucket_notification" "alb_logs" {
-  count  = var.enable_access_logs ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
+# S3 Bucket Event Notifications - Disabled due to missing SNS topic
+# resource "aws_s3_bucket_notification" "alb_logs" {
+#   count  = var.enable_access_logs ? 0 : 0
+#   bucket = aws_s3_bucket.alb_logs[0].id
+# 
+#   # Use SNS notification instead of Lambda (more supported)
+#   topic {
+#     topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-alb-notifications"
+#     events    = ["s3:ObjectCreated:*"]
+#     filter_prefix = "alb-logs/"
+#   }
+# }
 
-  # Use SNS notification instead of Lambda (more supported)
-  topic {
-    topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-alb-notifications"
-    events    = ["s3:ObjectCreated:*"]
-    filter_prefix = "alb-logs/"
-  }
-}
+# S3 Bucket Cross-Region Replication - Disabled due to missing DR region configuration
+# resource "aws_s3_bucket_replication_configuration" "alb_logs" {
+#   count = var.enable_access_logs ? 0 : 0
+#   
+#   bucket = aws_s3_bucket.alb_logs[0].id
+#   role   = aws_iam_role.alb_logs_replication[0].arn
+# 
+#   rule {
+#     id     = "alb_logs_replication"
+#     status = "Enabled"
+# 
+#     destination {
+#       bucket = "arn:aws:s3:::${var.project}-${var.env}-alb-logs-dr-${var.dr_region}"
+#       storage_class = "STANDARD_IA"
+#     }
+# 
+#     source_selection_criteria {
+#       sse_kms_encrypted_objects {
+#         status = "Enabled"
+#         }
+#       }
+#     }
+#   }
+# }
 
-# S3 Bucket Cross-Region Replication
-resource "aws_s3_bucket_replication_configuration" "alb_logs" {
-  count = var.enable_access_logs ? 1 : 0
-  
-  bucket = aws_s3_bucket.alb_logs[0].id
-  role   = aws_iam_role.alb_logs_replication[0].arn
-
-  rule {
-    id     = "alb_logs_replication"
-    status = "Enabled"
-
-    destination {
-      bucket = "arn:aws:s3:::${var.project}-${var.env}-alb-logs-dr-${var.dr_region}"
-      storage_class = "STANDARD_IA"
-    }
-
-    source_selection_criteria {
-      sse_kms_encrypted_objects {
-        status = "Enabled"
-      }
-    }
-  }
-}
-
-# IAM Role for S3 Replication
-resource "aws_iam_role" "alb_logs_replication" {
-  count = var.enable_access_logs ? 1 : 0
-  
-  name = "${var.project}-${var.env}-alb-logs-replication-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "s3.amazonaws.com"
-        }
-      }
-    ]
-  })
-  
-  tags = var.tags
-}
-
-# Attach S3 replication policy
-resource "aws_iam_role_policy_attachment" "alb_logs_replication" {
-  count = var.enable_access_logs ? 1 : 0
-  
-  role       = aws_iam_role.alb_logs_replication[0].name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSS3ReplicationServiceRole"
-}
+# IAM Role for S3 Replication - Disabled due to missing DR region configuration
+# resource "aws_iam_role" "alb_logs_replication" {
+#   count = var.enable_access_logs ? 0 : 0
+#   
+#   name = "${var.project}-${var.env}-alb-logs-replication-role"
+#   
+#   assume_role_policy = jsonencode({
+#     Version = "2012-10-17"
+#     Statement = [
+#       {
+#         Action = "sts:AssumeRole"
+#         Effect = "Allow"
+#         Principal = {
+#           Service = "s3.amazonaws.com"
+#         }
+#       }
+#     ]
+#   })
+#   
+#   tags = var.tags
+# }
+# 
+# # Attach S3 replication policy
+# resource "aws_iam_role_policy_attachment" "alb_logs_replication" {
+#   count = var.enable_access_logs ? 0 : 0
+#   
+#   role       = aws_iam_role.alb_logs_replication[0].name
+#   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSS3ReplicationServiceRole"
+# }
 
 # S3 Bucket Policy for ALB Logging
 resource "aws_s3_bucket_policy" "alb_logs" {
