@@ -49,6 +49,15 @@ module "eks" {
       to_port   = 0
       cidr_blocks = ["0.0.0.0/0"]
     }
+    # Explicit attachment to EKS nodes security group for compliance
+    ingress_eks_nodes_security_group = {
+      type                     = "ingress"
+      protocol                 = "tcp"
+      from_port                = 443
+      to_port                  = 443
+      source_security_groups   = [aws_security_group.eks_nodes.id]
+      description              = "Allow traffic from EKS nodes security group"
+    }
   }
 
   # EKS managed node group defaults

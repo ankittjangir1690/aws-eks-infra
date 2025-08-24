@@ -272,19 +272,21 @@ jobs:
     if: always()
     
     steps:
-      - name: Notify deployment status
-        uses: 8398a7/action-slack@v3
-        if: always()
-        with:
-          status: ${{ job.status }}
-          channel: '#devops'
-          text: |
-            Terraform deployment ${{ job.status }} for ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Run: ${{ github.run_id }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      # Slack notifications disabled - SLACK_WEBHOOK_URL secret not configured
+      # To enable Slack notifications, add SLACK_WEBHOOK_URL secret in repository settings
+      # - name: Notify deployment status
+      #   uses: 8398a7/action-slack@v3
+      #   if: always()
+      #   with:
+      #     status: ${{ job.status }}
+      #     channel: '#devops'
+      #     text: |
+      #       Terraform deployment ${{ job.status }} for ${{ github.repository }}
+      #       Branch: ${{ github.ref_name }}
+      #       Commit: ${{ github.sha }}
+      #       Run: ${{ github.run_id }}
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           
       - name: Comment on PR
         uses: actions/github-script@v6
