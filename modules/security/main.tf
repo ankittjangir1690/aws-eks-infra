@@ -94,6 +94,29 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
   
+  # Log4j Vulnerability Protection Rule
+  rule {
+    name     = "Log4jProtectionRule"
+    priority = 4
+    
+    override_action {
+      none {}
+    }
+    
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+    
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "Log4jProtectionMetric"
+      sampled_requests_enabled   = true
+    }
+  }
+  
   visibility_config {
     cloudwatch_metrics_enabled = true
     metric_name                = "WAFWebACLMetric"

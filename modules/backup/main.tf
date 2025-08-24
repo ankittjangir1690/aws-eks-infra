@@ -183,7 +183,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backup_reports" {
   
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      kms_master_key_id = aws_kms_key.backup_encryption[0].arn
+      sse_algorithm     = "aws:kms"
     }
   }
 }
@@ -255,6 +256,24 @@ resource "aws_s3_bucket_notification" "backup_reports" {
     topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-backup-notifications"
     events    = ["s3:ObjectCreated:*"]
     filter_prefix = "reports/"
+  }
+}
+
+# S3 Bucket Cross-Region Replication for Backup Reports
+resource "aws_s3_bucket_replication_configuration" "backup_reports" {
+  count = var.enable_backup ? 1 : 0
+  
+  bucket = aws_s3_bucket.backup_reports[0].id
+  
+  role = aws_iam_role.s3_replication_role[0].arn
+  
+  rule {
+    id     = "backup_reports_replication"
+    status = "Enabled"
+    
+    destination {
+      bucket = "arn:aws:s3:::${var.project}-${var.env}-backup-reports-backup-${var.dr_region}"
+    }
   }
 }
 
