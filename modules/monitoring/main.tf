@@ -219,7 +219,28 @@ resource "aws_sns_topic" "alarms" {
   
   name = "${var.project}-${var.env}-alarms-topic"
   
+  # Enable KMS encryption
+  kms_master_key_id = aws_kms_key.sns_encryption[0].arn
+  
   tags = var.tags
+}
+
+# KMS key for SNS encryption
+resource "aws_kms_key" "sns_encryption" {
+  count = var.enable_sns_notifications ? 1 : 0
+  
+  description             = "KMS key for SNS topic encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "sns_encryption" {
+  count = var.enable_sns_notifications ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-sns-encryption"
+  target_key_id = aws_kms_key.sns_encryption[0].key_id
 }
 
 # SNS Topic Subscription (Email)
@@ -344,7 +365,7 @@ resource "aws_cognito_identity_pool" "main" {
   
   identity_pool_name = "${var.project}-${var.env}-rum-identity-pool"
   
-  allow_unauthenticated_identities = true
+  allow_unauthenticated_identities = false  # Disable guest access for security
   
   tags = var.tags
 }

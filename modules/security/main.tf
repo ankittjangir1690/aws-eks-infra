@@ -115,6 +115,47 @@ resource "aws_iam_role_policy_attachment" "config_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/ConfigRole"
 }
 
+# Config bucket access logging
+resource "aws_s3_bucket_logging" "config_bucket" {
+  count = var.enable_config ? 1 : 0
+  
+  bucket = aws_s3_bucket.config_bucket[0].id
+  
+  target_bucket = aws_s3_bucket.config_bucket[0].id
+  target_prefix = "logs/"
+}
+
+# Config bucket lifecycle configuration
+resource "aws_s3_bucket_lifecycle_configuration" "config_bucket" {
+  count = var.enable_config ? 1 : 0
+  
+  bucket = aws_s3_bucket.config_bucket[0].id
+  
+  rule {
+    id     = "config_lifecycle"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 2555  # 7 years for compliance
+    }
+
+    # Abort incomplete multipart uploads after 7 days
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
 # CloudTrail - API Call Logging
 resource "aws_cloudtrail" "main" {
   count = var.enable_cloudtrail ? 1 : 0
@@ -125,11 +166,95 @@ resource "aws_cloudtrail" "main" {
   is_multi_region_trail        = true
   enable_logging               = true
   
+  # Enable log file validation
+  enable_log_file_validation = true
+  
+  # Enable KMS encryption
+  kms_key_id = aws_kms_key.cloudtrail_encryption[0].arn
+  
+  # Enable CloudWatch integration
+  cloud_watch_logs_group_arn = aws_cloudwatch_log_group.cloudtrail[0].arn
+  cloud_watch_logs_role_arn  = aws_iam_role.cloudtrail_cloudwatch[0].arn
+  
+  # SNS topic for notifications
+  sns_topic_name = aws_sns_topic.cloudtrail_alerts[0].name
+  
   event_selector {
     read_write_type                 = "All"
     include_management_events       = true
     exclude_management_event_sources = []
   }
+  
+  tags = var.tags
+}
+
+# KMS key for CloudTrail encryption
+resource "aws_kms_key" "cloudtrail_encryption" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  description             = "KMS key for CloudTrail encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "cloudtrail_encryption" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-cloudtrail-encryption"
+  target_key_id = aws_kms_key.cloudtrail_encryption[0].key_id
+}
+
+# CloudWatch Log Group for CloudTrail
+resource "aws_cloudwatch_log_group" "cloudtrail" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  name              = "/aws/cloudtrail/${var.project}-${var.env}"
+  retention_in_days = 365  # Minimum 1 year for compliance
+  kms_key_id        = aws_kms_key.cloudtrail_encryption[0].arn
+  
+  tags = var.tags
+}
+
+# IAM Role for CloudTrail CloudWatch integration
+resource "aws_iam_role" "cloudtrail_cloudwatch" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  name = "${var.project}-${var.env}-cloudtrail-cloudwatch-role"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+# Attach CloudWatch Logs policy
+resource "aws_iam_role_policy_attachment" "cloudtrail_cloudwatch" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  role       = aws_iam_role.cloudtrail_cloudwatch[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/CloudTrail-CloudWatchLogsRole"
+}
+
+# SNS Topic for CloudTrail alerts
+resource "aws_sns_topic" "cloudtrail_alerts" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  name = "${var.project}-${var.env}-cloudtrail-alerts"
+  
+  # Enable KMS encryption
+  kms_master_key_id = aws_kms_key.cloudtrail_encryption[0].arn
   
   tags = var.tags
 }
@@ -210,6 +335,47 @@ resource "aws_s3_bucket_policy" "cloudtrail_bucket" {
       }
     ]
   })
+}
+
+# CloudTrail bucket access logging
+resource "aws_s3_bucket_logging" "cloudtrail_bucket" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  bucket = aws_s3_bucket.cloudtrail_bucket[0].id
+  
+  target_bucket = aws_s3_bucket.cloudtrail_bucket[0].id
+  target_prefix = "logs/"
+}
+
+# CloudTrail bucket lifecycle configuration
+resource "aws_s3_bucket_lifecycle_configuration" "cloudtrail_bucket" {
+  count = var.enable_cloudtrail ? 1 : 0
+  
+  bucket = aws_s3_bucket.cloudtrail_bucket[0].id
+  
+  rule {
+    id     = "cloudtrail_lifecycle"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 2555  # 7 years for compliance
+    }
+
+    # Abort incomplete multipart uploads after 7 days
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
 }
 
 # Random string for bucket names

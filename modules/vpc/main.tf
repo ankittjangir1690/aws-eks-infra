@@ -167,6 +167,7 @@ resource "aws_cloudwatch_log_group" "vpc_flow_log" {
   
   name              = "/aws/vpc/flowlogs/${var.project}-${var.env}"
   retention_in_days = 365  # Minimum 1 year for compliance
+  kms_key_id        = aws_kms_key.vpc_flow_logs[0].arn
 
   tags = var.tags
 }
@@ -178,6 +179,38 @@ resource "aws_kms_key" "vpc_flow_logs" {
   description             = "KMS key for VPC Flow Logs encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow VPC Flow Logs to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "vpc-flow-logs.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "vpc-flow-logs.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
   
   tags = var.tags
 }

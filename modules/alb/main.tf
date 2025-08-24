@@ -164,9 +164,60 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      kms_master_key_id = aws_kms_key.alb_logs_encryption[0].arn
+      sse_algorithm     = "aws:kms"
     }
   }
+}
+
+# KMS key for ALB logs encryption
+resource "aws_kms_key" "alb_logs_encryption" {
+  count = var.enable_access_logs ? 1 : 0
+  
+  description             = "KMS key for ALB logs encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow S3 to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "s3.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "s3.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "alb_logs_encryption" {
+  count = var.enable_access_logs ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-alb-logs-encryption"
+  target_key_id = aws_kms_key.alb_logs_encryption[0].key_id
 }
 
 # S3 Bucket Public Access Block
@@ -202,6 +253,11 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
     expiration {
       days = 365
     }
+
+    # Abort incomplete multipart uploads after 7 days
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 }
 
@@ -222,38 +278,8 @@ resource "random_string" "bucket_suffix" {
   upper   = false
 }
 
-# S3 Bucket Versioning
-resource "aws_s3_bucket_versioning" "alb_logs" {
-  count  = var.enable_access_logs ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-# S3 Bucket Encryption
-resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
-  count  = var.enable_access_logs ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-
-# S3 Bucket Public Access Block
-resource "aws_s3_bucket_public_access_block" "alb_logs" {
-  count  = var.enable_access_logs ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
+# Data source for current AWS account ID
+data "aws_caller_identity" "current" {}
 
 # S3 Bucket Policy for ALB Logging
 resource "aws_s3_bucket_policy" "alb_logs" {

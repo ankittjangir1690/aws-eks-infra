@@ -5,7 +5,7 @@
 # EKS Cluster
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "19.21.0"  # Specific version for reproducible builds
+  version = "19.21.0"  # Specific version for reproducible builds - this is a fixed version, not a range
 
   cluster_name    = "${var.project}-${var.env}-eks"
   cluster_version = var.cluster_version
@@ -102,6 +102,7 @@ module "eks" {
 }
 
 # Security Group for EKS Nodes
+# Note: This security group is attached to EKS nodes via the eks_managed_node_group_defaults.vpc_security_group_ids
 resource "aws_security_group" "eks_nodes" {
   name_prefix = "${var.project}-${var.env}-eks-nodes"
   description = "Security group for EKS nodes"
@@ -167,12 +168,13 @@ resource "aws_auth_configmap" "aws_auth" {
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
 
-# CloudWatch Log Group for EKS Cluster
+# CloudWatch Log Group for EKS Cluster (with KMS encryption)
 resource "aws_cloudwatch_log_group" "eks_cluster" {
   count = var.enable_cloudwatch_logs ? 1 : 0
   
   name              = "/aws/eks/${var.project}-${var.env}-eks/cluster"
   retention_in_days = 365  # Minimum 1 year for compliance
+  kms_key_id        = aws_kms_key.eks_logs[0].arn
 
   tags = var.tags
 }
@@ -184,6 +186,38 @@ resource "aws_kms_key" "eks_logs" {
   description             = "KMS key for EKS CloudWatch logs encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow CloudWatch Logs to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "logs.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
   
   tags = var.tags
 }
@@ -235,6 +269,38 @@ resource "aws_kms_key" "eks_secrets" {
   description             = "KMS key for EKS secrets encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow EKS to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "eks.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
   
   tags = var.tags
 }

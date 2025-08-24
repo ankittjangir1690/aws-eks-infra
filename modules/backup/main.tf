@@ -9,7 +9,7 @@ resource "aws_backup_vault" "main" {
   name = "${var.project}-${var.env}-backup-vault"
   
   # Enable encryption with KMS CMK (required for security compliance)
-  encryption_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : aws_kms_key.backup_default[0].arn
+  encryption_key_arn = aws_kms_key.backup_default[0].arn
   
   # Enable point-in-time recovery
   force_destroy = false
@@ -80,7 +80,7 @@ resource "aws_backup_vault" "dr" {
   name = "${var.project}-${var.env}-dr-backup-vault"
   
   # Enable encryption with KMS CMK (required for security compliance)
-  encryption_key_arn = var.dr_kms_key_arn != "" ? var.dr_kms_key_arn : aws_kms_key.backup_default[0].arn
+  encryption_key_arn = aws_kms_key.backup_default[0].arn
   
   tags = var.tags
 }
