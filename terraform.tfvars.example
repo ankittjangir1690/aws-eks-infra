@@ -50,7 +50,7 @@ enable_config        = false    # Enable compliance monitoring
 enable_cloudtrail    = false   # Disable API logging (can be expensive)
 
 # Advanced Security (optional)
-enable_waf           = false   # Disable web application firewall
+enable_waf           = true    # Enable web application firewall for Log4j protection (CKV2_AWS_76 compliance)
 enable_inspector     = false   # Disable vulnerability assessment
 
 # Security Configuration

@@ -224,9 +224,9 @@ variable "enable_cloudtrail" {
 }
 
 variable "enable_waf" {
-  description = "Enable AWS WAF for web application protection"
+  description = "Enable AWS WAF for web application protection (required for CKV2_AWS_76 compliance)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_inspector" {

@@ -130,7 +130,3 @@ variable "tags" {
   default     = {}
 }
 
-variable "efs_name" {
-  description = "Name of the EFS filesystem"
-  type        = string
-}

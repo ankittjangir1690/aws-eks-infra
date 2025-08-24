@@ -24,6 +24,9 @@ resource "aws_backup_vault" "main" {
   # Enable point-in-time recovery
   force_destroy = false
   
+  # KMS encryption for compliance (CKV_AWS_166)
+  encryption_key_arn = aws_kms_key.backup_default[0].arn
+  
   tags = var.tags
 }
 
@@ -130,6 +133,9 @@ resource "aws_backup_vault" "dr" {
   provider = aws.dr_region
   
   name = "${var.project}-${var.env}-dr-backup-vault"
+  
+  # KMS encryption for compliance (CKV_AWS_166)
+  encryption_key_arn = var.dr_kms_key_arn != "" ? var.dr_kms_key_arn : aws_kms_key.backup_default[0].arn
   
   tags = var.tags
 }
