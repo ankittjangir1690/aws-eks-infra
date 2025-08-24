@@ -76,6 +76,7 @@ module "security" {
   config_log_retention_days = var.config_log_retention_days
   cloudtrail_log_retention_days = var.cloudtrail_log_retention_days
   waf_log_retention_days = var.waf_log_retention_days
+  dr_region             = var.dr_region
   
   tags = local.common_tags
 }

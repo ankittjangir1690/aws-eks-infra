@@ -25,6 +25,33 @@ resource "aws_guardduty_organization_admin_account" "main" {
   admin_account_id = data.aws_caller_identity.current.account_id
 }
 
+# GuardDuty Organization Configuration
+resource "aws_guardduty_organization_configuration" "main" {
+  count = var.enable_guardduty ? 1 : 0
+  
+  detector_id = aws_guardduty_detector.main[0].id
+  
+  auto_enable_organization_members = "ALL"
+  
+  datasources {
+    s3_logs {
+      auto_enable = true
+    }
+    kubernetes {
+      audit_logs {
+        auto_enable = true
+      }
+    }
+    malware_protection {
+      scan_ec2_instance_with_findings {
+        ebs_volumes {
+          auto_enable = true
+        }
+      }
+    }
+  }
+}
+
 # AWS Security Hub - Security Findings
 resource "aws_securityhub_account" "main" {
   count = var.enable_security_hub ? 1 : 0
@@ -60,6 +87,7 @@ resource "aws_s3_bucket" "config_bucket" {
   tags = var.tags
 }
 
+# S3 Bucket Versioning for Config
 resource "aws_s3_bucket_versioning" "config_bucket" {
   count = var.enable_config ? 1 : 0
   
@@ -70,6 +98,7 @@ resource "aws_s3_bucket_versioning" "config_bucket" {
   }
 }
 
+# S3 Bucket Encryption for Config
 resource "aws_s3_bucket_server_side_encryption_configuration" "config_bucket" {
   count = var.enable_config ? 1 : 0
   
@@ -82,6 +111,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "config_bucket" {
   }
 }
 
+# S3 Bucket Public Access Block for Config
 resource "aws_s3_bucket_public_access_block" "config_bucket" {
   count = var.enable_config ? 1 : 0
   
@@ -93,7 +123,7 @@ resource "aws_s3_bucket_public_access_block" "config_bucket" {
   restrict_public_buckets = true
 }
 
-# Config bucket lifecycle configuration
+# S3 Bucket Lifecycle for Config
 resource "aws_s3_bucket_lifecycle_configuration" "config_bucket" {
   count = var.enable_config ? 1 : 0
   
@@ -121,9 +151,49 @@ resource "aws_s3_bucket_lifecycle_configuration" "config_bucket" {
       days = 2555  # 7 years for compliance
     }
 
-    # Abort incomplete multipart uploads after 7 days
     abort_incomplete_multipart_upload {
       days_after_initiation = 7
+    }
+  }
+}
+
+# S3 Bucket Access Logging for Config
+resource "aws_s3_bucket_logging" "config_bucket" {
+  count = var.enable_config ? 1 : 0
+  
+  bucket = aws_s3_bucket.config_bucket[0].id
+  
+  target_bucket = aws_s3_bucket.config_bucket[0].id
+  target_prefix = "logs/"
+}
+
+# S3 Bucket Event Notifications for Config
+resource "aws_s3_bucket_notification" "config_bucket" {
+  count = var.enable_config ? 1 : 0
+  
+  bucket = aws_s3_bucket.config_bucket[0].id
+
+  topic {
+    topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-config-notifications"
+    events    = ["s3:ObjectCreated:*"]
+    filter_prefix = "config/"
+  }
+}
+
+# S3 Bucket Cross-Region Replication for Config
+resource "aws_s3_bucket_replication_configuration" "config_bucket" {
+  count = var.enable_config ? 1 : 0
+  
+  bucket = aws_s3_bucket.config_bucket[0].id
+  
+  role = aws_iam_role.s3_replication_role[0].arn
+  
+  rule {
+    id     = "config_replication"
+    status = "Enabled"
+    
+    destination {
+      bucket = "arn:aws:s3:::${var.project}-${var.env}-config-backup-${var.dr_region}"
     }
   }
 }
@@ -157,14 +227,73 @@ resource "aws_iam_role_policy_attachment" "config_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/ConfigRole"
 }
 
-# Config bucket access logging
-resource "aws_s3_bucket_logging" "config_bucket" {
-  count = var.enable_config ? 1 : 0
+# IAM Role for S3 Replication
+resource "aws_iam_role" "s3_replication_role" {
+  count = (var.enable_config || var.enable_cloudtrail) ? 1 : 0
   
-  bucket = aws_s3_bucket.config_bucket[0].id
+  name = "${var.project}-${var.env}-s3-replication-role"
   
-  target_bucket = aws_s3_bucket.config_bucket[0].id
-  target_prefix = "logs/"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "s3.amazonaws.com"
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+# IAM Policy for S3 Replication
+resource "aws_iam_role_policy" "s3_replication_policy" {
+  count = (var.enable_config || var.enable_cloudtrail) ? 1 : 0
+  
+  name = "${var.project}-${var.env}-s3-replication-policy"
+  role = aws_iam_role.s3_replication_role[0].id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetReplicationConfiguration",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.config_bucket[0].arn,
+          aws_s3_bucket.cloudtrail_bucket[0].arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObjectVersion",
+          "s3:GetObjectVersionAcl"
+        ]
+        Resource = [
+          "${aws_s3_bucket.config_bucket[0].arn}/*",
+          "${aws_s3_bucket.cloudtrail_bucket[0].arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ReplicateObject",
+          "s3:ReplicateDelete"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.project}-${var.env}-config-backup-${var.dr_region}/*",
+          "arn:aws:s3:::${var.project}-${var.env}-cloudtrail-backup-${var.dr_region}/*"
+        ]
+      }
+    ]
+  })
 }
 
 # CloudTrail - API Call Logging

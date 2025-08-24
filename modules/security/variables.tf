@@ -72,6 +72,12 @@ variable "waf_log_retention_days" {
   default     = 30
 }
 
+variable "dr_region" {
+  description = "Disaster recovery region for cross-region replication"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
