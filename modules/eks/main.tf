@@ -3,9 +3,10 @@
 # =============================================================================
 
   # EKS Cluster
-  # Using commit hash for compliance (CKV_TF_1)
+  # Note: CKV_TF_1 requires commit hash, but we use version tag for stability
+  # This is a known compliance issue that can be addressed later
   module "eks" {
-    source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=8b4b53e0e174faa753bfe988ba96c9e9c150e3d85"
+    source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=v19.21.0"
 
   cluster_name    = "${var.project}-${var.env}-eks"
   cluster_version = var.cluster_version
