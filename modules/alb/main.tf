@@ -66,6 +66,28 @@ resource "aws_lb" "myapp" {
   })
 }
 
+# ALB Listener Rule to drop HTTP headers and redirect to HTTPS
+resource "aws_lb_listener_rule" "drop_http_headers" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 1
+
+  action {
+    type = "redirect"
+    
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+}
+
 resource "aws_lb_target_group" "myapp_tg" {
   name     = "myapp-target-group"
   port     = 3000  # Port your application listens on
@@ -106,7 +128,7 @@ resource "aws_lb_listener" "https" {
   port              = 443
   protocol          = "HTTPS"
 
-  ssl_policy = "ELBSecurityPolicy-2016-08"
+  ssl_policy = "ELBSecurityPolicy-TLS-1-2-2017-01"  # Modern TLS 1.2+ policy
   certificate_arn = var.acm_certificate_arn
 
   default_action {
@@ -123,6 +145,73 @@ resource "aws_s3_bucket" "alb_logs" {
   tags = merge(var.tags, {
     Name = "${var.project}-${var.env}-alb-logs"
   })
+}
+
+# S3 Bucket Versioning
+resource "aws_s3_bucket_versioning" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# S3 Bucket Encryption
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# S3 Bucket Public Access Block
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# S3 Bucket Lifecycle Configuration
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  rule {
+    id     = "alb_logs_lifecycle"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 365
+    }
+  }
+}
+
+# S3 Bucket Access Logging
+resource "aws_s3_bucket_logging" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  target_bucket = aws_s3_bucket.alb_logs[0].id
+  target_prefix = "logs/"
 }
 
 # Random string for unique bucket names

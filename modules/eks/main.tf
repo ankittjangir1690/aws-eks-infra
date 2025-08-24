@@ -5,7 +5,7 @@
 # EKS Cluster
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "19.21.0"
+  version = "19.21.0"  # Specific version for reproducible builds
 
   cluster_name    = "${var.project}-${var.env}-eks"
   cluster_version = var.cluster_version
@@ -108,10 +108,27 @@ resource "aws_security_group" "eks_nodes" {
   vpc_id      = var.vpc_id
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTPS outbound for AWS services"
+  }
+  
+  egress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP outbound for AWS services"
+  }
+  
+  egress {
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow DNS outbound for name resolution"
   }
 
   tags = merge(var.tags, {
@@ -155,9 +172,27 @@ resource "aws_cloudwatch_log_group" "eks_cluster" {
   count = var.enable_cloudwatch_logs ? 1 : 0
   
   name              = "/aws/eks/${var.project}-${var.env}-eks/cluster"
-  retention_in_days = 30
+  retention_in_days = 365  # Minimum 1 year for compliance
 
   tags = var.tags
+}
+
+# KMS key for EKS CloudWatch logs encryption
+resource "aws_kms_key" "eks_logs" {
+  count = var.enable_cloudwatch_logs ? 1 : 0
+  
+  description             = "KMS key for EKS CloudWatch logs encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "eks_logs" {
+  count = var.enable_cloudwatch_logs ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-eks-logs"
+  target_key_id = aws_kms_key.eks_logs[0].key_id
 }
 
 # EKS Control Plane Logging
@@ -171,15 +206,42 @@ resource "aws_eks_cluster" "main" {
   vpc_config {
     subnet_ids              = var.private_subnets_eks
     endpoint_private_access = true
-    endpoint_public_access  = true
-    public_access_cidrs     = var.allowed_public_cidrs
+    endpoint_public_access  = false  # Disable public endpoint for security
+    public_access_cidrs     = []     # No public access allowed
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
+  # Enable secrets encryption
+  encryption_config {
+    resources = ["secrets"]
+    provider {
+      key_arn = aws_kms_key.eks_secrets[0].arn
+    }
+  }
+
   depends_on = [
-    aws_cloudwatch_log_group.eks_cluster
+    aws_cloudwatch_log_group.eks_cluster,
+    aws_kms_key.eks_secrets
   ]
 
   tags = var.tags
+}
+
+# KMS key for EKS secrets encryption
+resource "aws_kms_key" "eks_secrets" {
+  count = var.enable_eks_control_plane_logging ? 1 : 0
+  
+  description             = "KMS key for EKS secrets encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "eks_secrets" {
+  count = var.enable_eks_control_plane_logging ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-eks-secrets"
+  target_key_id = aws_kms_key.eks_secrets[0].key_id
 }

@@ -8,8 +8,8 @@ resource "aws_backup_vault" "main" {
   
   name = "${var.project}-${var.env}-backup-vault"
   
-  # Enable encryption with KMS CMK
-  encryption_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
+  # Enable encryption with KMS CMK (required for security compliance)
+  encryption_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : aws_kms_key.backup_default[0].arn
   
   # Enable point-in-time recovery
   force_destroy = false
@@ -79,8 +79,8 @@ resource "aws_backup_vault" "dr" {
   
   name = "${var.project}-${var.env}-dr-backup-vault"
   
-  # Enable encryption with KMS CMK
-  encryption_key_arn = var.dr_kms_key_arn != "" ? var.dr_kms_key_arn : null
+  # Enable encryption with KMS CMK (required for security compliance)
+  encryption_key_arn = var.dr_kms_key_arn != "" ? var.dr_kms_key_arn : aws_kms_key.backup_default[0].arn
   
   tags = var.tags
 }
@@ -268,6 +268,56 @@ resource "random_string" "bucket_suffix" {
 
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
+
+# Default KMS key for backup encryption (if no custom key provided)
+resource "aws_kms_key" "backup_default" {
+  count = var.enable_backup ? 1 : 0
+  
+  description             = "Default KMS key for ${var.project}-${var.env} backup encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow AWS Backup to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "backup.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "backup.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "backup_default" {
+  count = var.enable_backup ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-backup-default"
+  target_key_id = aws_kms_key.backup_default[0].key_id
+}
 
 # Provider for DR region
 provider "aws" {
