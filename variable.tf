@@ -340,9 +340,9 @@ variable "rum_domain" {
 
 # Advanced Backup Features
 variable "enable_backup" {
-  description = "Enable AWS Backup for automated backup"
+  description = "Enable AWS Backup for automated backup (required for CKV_AWS_166 compliance)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_cross_region_backup" {

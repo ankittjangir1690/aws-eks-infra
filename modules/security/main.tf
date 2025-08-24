@@ -117,6 +117,29 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
   
+  # Additional Log4j Protection Rule for explicit compliance
+  rule {
+    name     = "Log4jExplicitProtection"
+    priority = 5
+    
+    override_action {
+      none {}
+    }
+    
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+    
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "Log4jExplicitProtectionMetric"
+      sampled_requests_enabled   = true
+    }
+  }
+  
   visibility_config {
     cloudwatch_metrics_enabled = true
     metric_name                = "WAFWebACLMetric"
@@ -150,6 +173,21 @@ resource "aws_wafv2_web_acl_logging_configuration" "main" {
     aws_cloudwatch_log_group.waf,
     aws_kms_key.waf_encryption
   ]
+  
+  # Explicit logging configuration for compliance
+  logging_filter {
+    default_behavior = "KEEP"
+    
+    filter {
+      behavior = "KEEP"
+      condition {
+        action_condition {
+          action = "BLOCK"
+        }
+      }
+      requirement = "MEETS_ANY"
+    }
+  }
 }
 
 # KMS key for WAF CloudWatch logs encryption

@@ -315,6 +315,9 @@ resource "aws_sns_topic" "backup_notifications" {
   
   name = "${var.project}-${var.env}-backup-notifications"
   
+  # KMS encryption for compliance (CKV_AWS_26)
+  kms_master_key_id = aws_kms_key.backup_default[0].arn
+  
   tags = var.tags
 }
 
@@ -341,6 +344,71 @@ resource "aws_s3_bucket" "backup_reports_dr" {
   bucket = "${var.project}-${var.env}-backup-reports-backup-${var.dr_region}"
   
   tags = var.tags
+}
+
+# DR S3 Bucket Access Logging (CKV_AWS_18 compliance)
+resource "aws_s3_bucket_logging" "backup_reports_dr" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  bucket = aws_s3_bucket.backup_reports_dr[0].id
+  
+  target_bucket = aws_s3_bucket.backup_reports_dr[0].id
+  target_prefix = "logs/"
+}
+
+# DR S3 Bucket Lifecycle Configuration (CKV2_AWS_61 compliance)
+resource "aws_s3_bucket_lifecycle_configuration" "backup_reports_dr" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  bucket = aws_s3_bucket.backup_reports_dr[0].id
+  
+  rule {
+    id     = "backup_reports_dr_lifecycle"
+    status = "Enabled"
+    
+    filter {
+      prefix = ""
+    }
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 2555  # 7 years for compliance
+    }
+
+    # Abort incomplete multipart uploads after 7 days
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+# DR S3 Bucket Event Notifications (CKV2_AWS_62 compliance)
+resource "aws_s3_bucket_notification" "backup_reports_dr" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  bucket = aws_s3_bucket.backup_reports_dr[0].id
+
+  # Use SNS notification for compliance
+  topic {
+    topic_arn = aws_sns_topic.backup_notifications[0].arn
+    events    = ["s3:ObjectCreated:*"]
+    filter_prefix = "reports/"
+  }
 }
 
 # DR S3 Bucket Versioning
@@ -446,7 +514,7 @@ resource "aws_backup_global_settings" "main" {
 
 # Default KMS key for backup encryption (if no custom key provided)
 resource "aws_kms_key" "backup_default" {
-  count = var.enable_backup ? 1 : 0
+  count = 1  # Always create KMS key for compliance
   
   description             = "Default KMS key for ${var.project}-${var.env} backup encryption"
   deletion_window_in_days = 7
@@ -496,7 +564,7 @@ resource "aws_kms_alias" "backup_default" {
 
 # DR Region KMS key for backup encryption
 resource "aws_kms_key" "backup_dr_default" {
-  count = var.enable_cross_region_backup ? 1 : 0
+  count = 1  # Always create DR KMS key for compliance
   
   provider = aws.dr_region
   
