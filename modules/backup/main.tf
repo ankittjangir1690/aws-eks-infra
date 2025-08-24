@@ -246,10 +246,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backup_reports" {
   bucket = aws_s3_bucket.backup_reports[0].id
   
   rule {
-    apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.backup_encryption[0].arn
-      sse_algorithm     = "aws:kms"
-    }
+         apply_server_side_encryption_by_default {
+       kms_master_key_id = aws_kms_key.backup_default[0].arn
+       sse_algorithm     = "aws:kms"
+     }
   }
 }
 
@@ -309,6 +309,15 @@ resource "aws_s3_bucket_lifecycle_configuration" "backup_reports" {
   }
 }
 
+# SNS Topic for Backup Notifications
+resource "aws_sns_topic" "backup_notifications" {
+  count = var.enable_backup ? 1 : 0
+  
+  name = "${var.project}-${var.env}-backup-notifications"
+  
+  tags = var.tags
+}
+
 # S3 Bucket Event Notifications
 resource "aws_s3_bucket_notification" "backup_reports" {
   count = var.enable_backup ? 1 : 0
@@ -317,10 +326,64 @@ resource "aws_s3_bucket_notification" "backup_reports" {
 
   # Use SNS notification instead of Lambda (more supported)
   topic {
-    topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-backup-notifications"
+    topic_arn = aws_sns_topic.backup_notifications[0].arn
     events    = ["s3:ObjectCreated:*"]
     filter_prefix = "reports/"
   }
+}
+
+# DR Region S3 Bucket for Backup Reports Replication
+resource "aws_s3_bucket" "backup_reports_dr" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  bucket = "${var.project}-${var.env}-backup-reports-backup-${var.dr_region}"
+  
+  tags = var.tags
+}
+
+# DR S3 Bucket Versioning
+resource "aws_s3_bucket_versioning" "backup_reports_dr" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  bucket = aws_s3_bucket.backup_reports_dr[0].id
+  
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# DR S3 Bucket Encryption
+resource "aws_s3_bucket_server_side_encryption_configuration" "backup_reports_dr" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  bucket = aws_s3_bucket.backup_reports_dr[0].id
+  
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.backup_dr_default[0].arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
+# DR S3 Bucket Public Access Block
+resource "aws_s3_bucket_public_access_block" "backup_reports_dr" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  bucket = aws_s3_bucket.backup_reports_dr[0].id
+  
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # S3 Bucket Cross-Region Replication for Backup Reports
@@ -336,7 +399,7 @@ resource "aws_s3_bucket_replication_configuration" "backup_reports" {
     status = "Enabled"
     
     destination {
-      bucket = "arn:aws:s3:::${var.project}-${var.env}-backup-reports-backup-${var.dr_region}"
+      bucket = aws_s3_bucket.backup_reports_dr[0].arn
     }
   }
 }
@@ -485,6 +548,66 @@ resource "aws_kms_alias" "backup_dr_default" {
   target_key_id = aws_kms_key.backup_dr_default[0].key_id
 }
 
+# IAM Role for S3 Cross-Region Replication
+resource "aws_iam_role" "s3_replication_role" {
+  count = var.enable_backup ? 1 : 0
+  
+  name = "${var.project}-${var.env}-s3-replication-role"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "s3.amazonaws.com"
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+# Attach S3 replication policy
+resource "aws_iam_role_policy" "s3_replication_policy" {
+  count = var.enable_backup ? 1 : 0
+  
+  name = "${var.project}-${var.env}-s3-replication-policy"
+  role = aws_iam_role.s3_replication_role[0].id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetReplicationConfiguration",
+          "s3:ListBucket"
+        ]
+        Resource = [aws_s3_bucket.backup_reports[0].arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObjectVersion",
+          "s3:GetObjectVersionAcl"
+        ]
+        Resource = "${aws_s3_bucket.backup_reports[0].arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ReplicateObject",
+          "s3:ReplicateDelete"
+        ]
+        Resource = "${aws_s3_bucket.backup_reports_dr[0].arn}/*"
+      }
+    ]
+  })
+}
+
 # Provider for DR region
 provider "aws" {
   alias  = "dr_region"
@@ -492,5 +615,15 @@ provider "aws" {
   
   default_tags {
     tags = var.tags
+  }
+}
+
+# Random provider for unique bucket names
+terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
