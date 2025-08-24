@@ -145,6 +145,7 @@ resource "aws_cloudwatch_log_group" "efs" {
   
   name              = "/aws/efs/${var.name}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_arn != "" ? var.kms_key_arn : null
 
   tags = var.tags
 }
@@ -190,7 +191,10 @@ resource "aws_iam_role_policy" "efs_monitoring" {
           "logs:DescribeLogGroups",
           "logs:DescribeLogStreams"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/efs/${var.name}",
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/efs/${var.name}:*"
+        ]
       }
     ]
   })

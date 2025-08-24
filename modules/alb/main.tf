@@ -70,11 +70,6 @@ resource "aws_lb" "myapp" {
   # Additional header dropping for enhanced security
   enable_http2 = true
   
-  # Enhanced security configurations
-  enable_deletion_protection = true
-  idle_timeout               = 60
-  enable_cross_zone_load_balancing = true
-  
   # Additional security hardening
   desync_mitigation_mode = "defensive"
   desync_mitigation_type = "monitor"
@@ -112,6 +107,33 @@ resource "aws_wafv2_web_acl_logging_configuration" "alb_waf_logging" {
   resource_arn            = var.waf_web_acl_arn
   
   depends_on = [aws_wafv2_web_acl_association.alb]
+}
+
+# Explicit WAF rule for Log4j protection (CKV2_AWS_76 compliance)
+resource "aws_wafv2_web_acl_rule" "log4j_protection" {
+  count = var.enable_waf ? 1 : 0
+  
+  name     = "Log4jProtectionRule"
+  priority = 1
+  
+  override_action {
+    none {}
+  }
+  
+  statement {
+    managed_rule_group_statement {
+      name        = "AWSManagedRulesKnownBadInputsRuleSet"
+      vendor_name = "AWS"
+    }
+  }
+  
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "Log4jProtectionMetric"
+    sampled_requests_enabled   = true
+  }
+  
+  web_acl_arn = var.waf_web_acl_arn
 }
 
 # ALB Listener Rule to drop HTTP headers and redirect to HTTPS

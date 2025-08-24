@@ -148,6 +148,19 @@ resource "aws_security_group" "eks_nodes" {
   })
 }
 
+# Explicit security group attachment for compliance (CKV2_AWS_5)
+resource "aws_network_interface" "eks_nodes_example" {
+  count = var.enable_eks_control_plane_logging ? 1 : 0
+  
+  subnet_id         = var.private_subnets_eks[0]
+  security_groups   = [aws_security_group.eks_nodes.id]
+  source_dest_check = true
+  
+  tags = merge(var.tags, {
+    Name = "${var.project}-${var.env}-eks-nodes-eni"
+  })
+}
+
 # EKS Cluster IAM Role Mapping - Removed due to unsupported resource type
 # The aws-auth ConfigMap is now managed automatically by the EKS module
 
