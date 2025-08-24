@@ -113,7 +113,7 @@ resource "aws_efs_access_point" "main" {
   })
 }
 
-# EFS Backup Policy (if enabled)
+# EFS Backup Policy (if enabled) - CKV2_AWS_18 compliance
 resource "aws_efs_backup_policy" "main" {
   count = var.enable_backup ? 1 : 0
   
@@ -122,6 +122,21 @@ resource "aws_efs_backup_policy" "main" {
   backup_policy {
     status = "ENABLED"
   }
+}
+
+# EFS Backup Selection - Explicit integration with AWS Backup (CKV2_AWS_18 compliance)
+resource "aws_backup_selection" "efs_explicit" {
+  count = var.enable_backup ? 1 : 0
+  
+  name         = "${var.name}-efs-backup-selection"
+  iam_role_arn = var.backup_role_arn
+  plan_id      = var.backup_plan_id
+  
+  resources = [
+    aws_efs_file_system.main.arn
+  ]
+  
+  depends_on = [aws_efs_file_system.main]
 }
 
 # CloudWatch Log Group for EFS (if monitoring is enabled)

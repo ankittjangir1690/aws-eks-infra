@@ -41,3 +41,13 @@ output "kms_key_id" {
   description = "ID of the KMS key used for backup encryption"
   value       = var.enable_backup ? aws_kms_key.backup_default[0].key_id : ""
 }
+
+output "backup_role_arn" {
+  description = "ARN of the AWS Backup IAM role"
+  value       = var.enable_backup ? aws_iam_role.backup_role[0].arn : ""
+}
+
+output "backup_plan_id" {
+  description = "ID of the AWS Backup plan"
+  value       = var.enable_backup ? aws_backup_plan.main[0].id : ""
+}

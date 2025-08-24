@@ -57,6 +57,10 @@ module "efs" {
   log_retention_days   = var.backup_retention_days
   kms_key_arn          = var.kms_key_arn
   
+  # Backup integration variables (CKV2_AWS_18 compliance)
+  backup_role_arn      = var.enable_efs_backup ? module.backup.backup_role_arn : ""
+  backup_plan_id       = var.enable_efs_backup ? module.backup.backup_plan_id : ""
+  
   tags = local.common_tags
 }
 

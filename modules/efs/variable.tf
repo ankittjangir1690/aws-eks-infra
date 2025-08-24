@@ -100,6 +100,17 @@ variable "enable_monitoring" {
   default     = false
 }
 
+variable "backup_role_arn" {
+  description = "ARN of the AWS Backup IAM role for EFS backup integration"
+  type        = string
+  default     = ""
+}
+
+variable "backup_plan_id" {
+  description = "ID of the AWS Backup plan for EFS backup integration"
+  type        = string
+  default     = ""
+
 variable "log_retention_days" {
   description = "Number of days to retain CloudWatch logs"
   type        = number
