@@ -312,18 +312,38 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
   }
 }
 
-# S3 Bucket Event Notifications - Disabled due to missing SNS topic
-# resource "aws_s3_bucket_notification" "alb_logs" {
-#   count  = var.enable_access_logs ? 0 : 0
-#   bucket = aws_s3_bucket.alb_logs[0].id
-# 
-#   # Use SNS notification instead of Lambda (more supported)
-#   topic {
-#     topic_arn = "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.project}-${var.env}-alb-notifications"
-#     events    = ["s3:ObjectCreated:*"]
-#     filter_prefix = "alb-logs/"
-#   }
-# }
+# S3 Bucket Event Notifications
+resource "aws_s3_bucket_notification" "alb_logs" {
+  count  = var.enable_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  # Use SNS notification for compliance (CKV2_AWS_62)
+  topic {
+    topic_arn = aws_sns_topic.alb_notifications[0].arn
+    events    = ["s3:ObjectCreated:*"]
+    filter_prefix = "alb-logs/"
+  }
+}
+
+# SNS Topic for ALB Notifications
+resource "aws_sns_topic" "alb_notifications" {
+  count = var.enable_access_logs ? 1 : 0
+  
+  name = "${var.project}-${var.env}-alb-notifications"
+  
+  # KMS encryption for compliance
+  kms_master_key_id = aws_kms_key.alb_logs_encryption[0].arn
+  
+  tags = var.tags
+}
+
+resource "aws_sns_topic_subscription" "alb_notifications" {
+  count = var.enable_access_logs ? 1 : 0
+  
+  topic_arn = aws_sns_topic.alb_notifications[0].arn
+  protocol  = "email"
+  endpoint  = "admin@yourcompany.com"  # Change this to your email
+}
 
 # S3 Bucket Cross-Region Replication - Disabled due to missing DR region configuration
 # resource "aws_s3_bucket_replication_configuration" "alb_logs" {

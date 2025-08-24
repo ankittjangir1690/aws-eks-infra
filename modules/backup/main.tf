@@ -73,15 +73,15 @@ resource "aws_s3_bucket_public_access_block" "backup_reports" {
   restrict_public_buckets = true
 }
 
-# S3 Bucket Access Logging
-resource "aws_s3_bucket_logging" "backup_reports" {
-  count = var.enable_backup ? 1 : 0
-  
-  bucket = aws_s3_bucket.backup_reports[0].id
-  
-  target_bucket = aws_s3_bucket.backup_reports[0].id
-  target_prefix = "logs/"
-}
+# S3 Bucket Access Logging - Disabled to prevent circular logging
+# resource "aws_s3_bucket_logging" "backup_reports" {
+#   count = var.enable_backup ? 1 : 0
+#   
+#   bucket = aws_s3_bucket.backup_reports[0].id
+#   
+#   target_bucket = aws_s3_bucket.backup_reports[0].id
+#   target_prefix = "logs/"
+# }
 
 # S3 Bucket Lifecycle Configuration
 resource "aws_s3_bucket_lifecycle_configuration" "backup_reports" {
@@ -118,6 +118,20 @@ resource "aws_s3_bucket_lifecycle_configuration" "backup_reports" {
   }
 }
 
+# S3 Bucket Event Notifications for compliance (CKV2_AWS_62)
+resource "aws_s3_bucket_notification" "backup_reports" {
+  count = var.enable_backup ? 1 : 0
+  
+  bucket = aws_s3_bucket.backup_reports[0].id
+  
+  # Use SNS notification for compliance
+  topic {
+    topic_arn = aws_sns_topic.backup_notifications[0].arn
+    events    = ["s3:ObjectCreated:*"]
+    filter_prefix = "backup-reports/"
+  }
+}
+
 # SNS Topic for Backup Notifications
 resource "aws_sns_topic" "backup_notifications" {
   count = var.enable_backup ? 1 : 0
@@ -130,19 +144,7 @@ resource "aws_sns_topic" "backup_notifications" {
   tags = var.tags
 }
 
-# S3 Bucket Event Notifications
-resource "aws_s3_bucket_notification" "backup_reports" {
-  count = var.enable_backup ? 1 : 0
-  
-  bucket = aws_s3_bucket.backup_reports[0].id
-
-  # Use SNS notification instead of Lambda (more supported)
-  topic {
-    topic_arn = aws_sns_topic.backup_notifications[0].arn
-    events    = ["s3:ObjectCreated:*"]
-    filter_prefix = "reports/"
-  }
-}
+# Note: S3 bucket notification is already defined above
 
 # DR Region S3 Bucket for Backup Reports Replication
 resource "aws_s3_bucket" "backup_reports_dr" {
