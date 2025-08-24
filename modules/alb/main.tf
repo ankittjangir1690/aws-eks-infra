@@ -89,33 +89,21 @@ resource "aws_lb" "myapp" {
   })
 }
 
-# Note: WAF WebACL is now managed by the security module
-# This ensures a single WAF configuration across all resources
-
-# Associate ALB with WAF for protection (CKV2_AWS_76 compliance)
-resource "aws_wafv2_web_acl_association" "alb_assoc" {
-  count = var.enable_waf ? 1 : 0
-  
-  resource_arn = aws_lb.myapp.arn
-  web_acl_arn  = var.waf_web_acl_arn  # Use WAF from security module
-  
-  depends_on = [aws_lb.myapp]
-}
-
-# WAFv2 WebACL for ALB Log4j Protection (CKV2_AWS_76 compliance)
+# WAFv2 WebACL for ALB with Log4j Protection and Logging (CKV2_AWS_31 & CKV2_AWS_76 compliance)
 resource "aws_wafv2_web_acl" "alb_waf" {
   count = var.enable_waf ? 1 : 0
   
   name        = "${var.project}-${var.env}-alb-waf"
-  description = "WAFv2 for ALB with Log4j protection"
+  description = "WAFv2 for ALB with Log4j protection and logging"
   scope       = "REGIONAL"
 
   default_action {
     allow {}
   }
 
+  # Log4j Vulnerability Protection Rule
   rule {
-    name     = "AWS-AWSManagedRulesKnownBadInputsRuleSet"
+    name     = "Log4jProtectionRule"
     priority = 1
 
     statement {
@@ -131,7 +119,30 @@ resource "aws_wafv2_web_acl" "alb_waf" {
 
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name                = "knownBadInputs"
+      metric_name                = "Log4jProtection"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # Additional Core Rule Set for comprehensive protection
+  rule {
+    name     = "CoreRuleSet"
+    priority = 2
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesCoreRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    override_action {
+      none {}
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "CoreRuleSet"
       sampled_requests_enabled   = true
     }
   }
@@ -145,7 +156,42 @@ resource "aws_wafv2_web_acl" "alb_waf" {
   tags = var.tags
 }
 
-# Attach WAF to ALB (CKV2_AWS_76 compliance)
+# CloudWatch Log Group for WAF logs (CKV2_AWS_31 compliance)
+resource "aws_cloudwatch_log_group" "waf_logs" {
+  count = var.enable_waf ? 1 : 0
+  
+  name              = "/aws/wafv2/alb/${var.project}-${var.env}"
+  retention_in_days = 365  # Minimum 1 year for compliance
+  
+  tags = var.tags
+}
+
+# WAF Logging Configuration (CKV2_AWS_31 compliance)
+resource "aws_wafv2_web_acl_logging_configuration" "alb_waf_logging" {
+  count = var.enable_waf ? 1 : 0
+  
+  log_destination_configs = [aws_cloudwatch_log_group.waf_logs[0].arn]
+  resource_arn            = aws_wafv2_web_acl.alb_waf[0].arn
+  
+  # Log all requests for security monitoring
+  logging_filter {
+    default_behavior = "KEEP"
+    
+    filter {
+      behavior = "KEEP"
+      condition {
+        action_condition {
+          action = "BLOCK"
+        }
+      }
+      requirement = "MEETS_ANY"
+    }
+  }
+  
+  depends_on = [aws_wafv2_web_acl.alb_waf, aws_cloudwatch_log_group.waf_logs]
+}
+
+# Associate WAF with ALB (CKV2_AWS_76 compliance)
 resource "aws_wafv2_web_acl_association" "alb_assoc" {
   count = var.enable_waf ? 1 : 0
   
