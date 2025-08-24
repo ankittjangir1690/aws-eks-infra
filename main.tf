@@ -130,23 +130,23 @@ module "backup" {
   tags = local.common_tags
 }
 
-# ALB Module (optional - uncomment when needed)
-# module "alb" {
-#   source = "./modules/alb"
-#   
-#   project               = var.project_name
-#   env                   = var.environment
-#   vpc_id                = module.vpc.vpc_id
-#   subnets               = module.vpc.public_subnets
-#   acm_certificate_arn   = var.acm_certificate_arn
-#   allowed_cidr_blocks   = var.allowed_public_cidrs
-#   enable_access_logs    = var.enable_alb_access_logs
-#   enable_waf            = var.enable_waf
-#   waf_web_acl_arn      = module.security.waf_web_acl_arn
-#   dr_region             = var.dr_region
-#   
-#   tags = local.common_tags
-# }
+# ALB Module - Application Load Balancer with WAF Protection
+module "alb" {
+  source = "./modules/alb"
+  
+  project               = var.project_name
+  env                   = var.environment
+  vpc_id                = module.vpc.vpc_id
+  subnets               = module.vpc.public_subnets
+  acm_certificate_arn   = var.acm_certificate_arn
+  allowed_cidr_blocks   = var.allowed_public_cidrs
+  enable_access_logs    = var.enable_alb_access_logs
+  enable_waf            = var.enable_waf
+  waf_web_acl_arn      = module.security.waf_web_acl_arn
+  dr_region             = var.dr_region
+  
+  tags = local.common_tags
+}
 
 # Route 53 setup (commented out - uncomment when needed)
 # module "route53" {

@@ -27,6 +27,32 @@ resource "aws_backup_vault" "main" {
   tags = var.tags
 }
 
+# Backup Vault Policy for EFS (CKV2_AWS_18 compliance)
+resource "aws_backup_vault_policy" "main" {
+  count = var.enable_backup ? 1 : 0
+  
+  backup_vault_name = aws_backup_vault.main[0].name
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowEFSBackup"
+        Effect = "Allow"
+        Principal = {
+          Service = "backup.amazonaws.com"
+        }
+        Action = [
+          "backup:PutBackupVaultAccessPolicy",
+          "backup:DeleteBackupVaultAccessPolicy",
+          "backup:DescribeBackupVault"
+        ]
+        Resource = aws_backup_vault.main[0].arn
+      }
+    ]
+  })
+}
+
 # AWS Backup Plan
 resource "aws_backup_plan" "main" {
   count = var.enable_backup ? 1 : 0
@@ -78,6 +104,22 @@ resource "aws_backup_plan" "main" {
     }
   }
   
+  # EFS-specific backup rule (CKV2_AWS_18 compliance)
+  rule {
+    rule_name         = "efs_backup"
+    target_vault_name = aws_backup_vault.main[0].name
+    
+    schedule = "cron(0 8 ? * * *)"  # Daily at 8 AM UTC for EFS
+    
+    lifecycle {
+      delete_after = var.backup_retention_days
+    }
+    
+    copy_action {
+      destination_vault_arn = var.enable_cross_region_backup ? aws_backup_vault.dr[0].arn : null
+    }
+  }
+  
   tags = var.tags
 }
 
@@ -101,7 +143,19 @@ resource "aws_backup_selection" "eks_resources" {
   plan_id      = aws_backup_plan.main[0].id
   
   resources = [
-    "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.project}-${var.env}-eks",
+    "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.project}-${var.env}-eks"
+  ]
+}
+
+# AWS Backup Selection - EFS Resources (CKV2_AWS_18 compliance)
+resource "aws_backup_selection" "efs_resources" {
+  count = var.enable_backup ? 1 : 0
+  
+  name         = "${var.project}-${var.env}-efs-backup-selection"
+  iam_role_arn = aws_iam_role.backup_role[0].arn
+  plan_id      = aws_backup_plan.main[0].id
+  
+  resources = [
     "arn:aws:efs:${var.region}:${data.aws_caller_identity.current.account_id}:file-system/${var.efs_file_system_id}"
   ]
 }
