@@ -182,6 +182,22 @@ variable "enable_vpc_cni" {
   default     = true
 }
 
+# =============================================================================
+# ALB CONFIGURATION - Optional Load Balancer
+# =============================================================================
+
+variable "enable_alb_access_logs" {
+  description = "Enable ALB access logging to S3"
+  type        = bool
+  default     = true
+}
+
+variable "acm_certificate_arn" {
+  description = "ACM certificate ARN for ALB HTTPS (required if using ALB)"
+  type        = string
+  default     = ""
+}
+
 # Advanced Security Features
 variable "enable_guardduty" {
   description = "Enable AWS GuardDuty for threat detection"

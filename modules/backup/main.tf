@@ -8,8 +8,8 @@ resource "aws_backup_vault" "main" {
   
   name = "${var.project}-${var.env}-backup-vault"
   
-  # Enable encryption
-  encryption_key_arn = var.kms_key_arn
+  # Enable encryption with KMS CMK
+  encryption_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   
   # Enable point-in-time recovery
   force_destroy = false
@@ -79,7 +79,8 @@ resource "aws_backup_vault" "dr" {
   
   name = "${var.project}-${var.env}-dr-backup-vault"
   
-  encryption_key_arn = var.dr_kms_key_arn
+  # Enable encryption with KMS CMK
+  encryption_key_arn = var.dr_kms_key_arn != "" ? var.dr_kms_key_arn : null
   
   tags = var.tags
 }

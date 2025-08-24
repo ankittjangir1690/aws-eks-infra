@@ -13,6 +13,9 @@ resource "aws_efs_file_system" "main" {
   # Security configuration
   encrypted = true
   
+  # Use KMS CMK for encryption if provided, otherwise use AWS managed key
+  kms_key_id = var.kms_key_arn != "" ? var.kms_key_arn : null
+  
   # Backup configuration
   availability_zone_id = var.availability_zone_id
   
@@ -54,13 +57,21 @@ resource "aws_security_group" "efs" {
     }
   }
 
-  # Egress rule - allow all outbound traffic
+  # Egress rule - allow only necessary outbound traffic
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
+    description = "Allow HTTPS outbound for AWS services"
+  }
+  
+  egress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP outbound for AWS services"
   }
 
   tags = merge(var.tags, {

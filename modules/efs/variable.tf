@@ -106,6 +106,12 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "kms_key_arn" {
+  description = "KMS key ARN for EFS encryption (optional - uses AWS managed key if not provided)"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
