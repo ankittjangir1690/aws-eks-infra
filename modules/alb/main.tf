@@ -102,8 +102,58 @@ resource "aws_wafv2_web_acl_association" "alb_assoc" {
   depends_on = [aws_lb.myapp]
 }
 
-# Note: WAF WebACL association has been removed for now
-# It can be re-enabled later when WAF compliance is needed
+# WAFv2 WebACL for ALB Log4j Protection (CKV2_AWS_76 compliance)
+resource "aws_wafv2_web_acl" "alb_waf" {
+  count = var.enable_waf ? 1 : 0
+  
+  name        = "${var.project}-${var.env}-alb-waf"
+  description = "WAFv2 for ALB with Log4j protection"
+  scope       = "REGIONAL"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "AWS-AWSManagedRulesKnownBadInputsRuleSet"
+    priority = 1
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    override_action {
+      none {}
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "knownBadInputs"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "albWaf"
+    sampled_requests_enabled   = true
+  }
+  
+  tags = var.tags
+}
+
+# Attach WAF to ALB (CKV2_AWS_76 compliance)
+resource "aws_wafv2_web_acl_association" "alb_assoc" {
+  count = var.enable_waf ? 1 : 0
+  
+  resource_arn = aws_lb.myapp.arn
+  web_acl_arn  = aws_wafv2_web_acl.alb_waf[0].arn
+  
+  depends_on = [aws_lb.myapp, aws_wafv2_web_acl.alb_waf]
+}
 
 # ALB Listener Rule to drop HTTP headers and redirect to HTTPS
 resource "aws_lb_listener_rule" "drop_http_headers" {

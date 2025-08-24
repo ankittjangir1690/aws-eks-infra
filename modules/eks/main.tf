@@ -3,10 +3,9 @@
 # =============================================================================
 
   # EKS Cluster
-  # Using stable version tag for production stability
-  # Note: CKV_TF_1 prefers commit hash, but we prioritize stability
+  # Using commit hash for compliance (CKV_TF_1)
   module "eks" {
-    source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=v19.21.0"
+    source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=4a3b92c"
 
   cluster_name    = "${var.project}-${var.env}-eks"
   cluster_version = var.cluster_version
