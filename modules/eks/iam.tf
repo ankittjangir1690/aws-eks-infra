@@ -2,6 +2,10 @@
 # EKS IAM CONFIGURATION - Updated 2024 with Best Practices
 # =============================================================================
 
+# Data sources for resource ARNs
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
 # Custom IAM Policy for ALB Ingress Controller (Minimal Permissions)
 resource "aws_iam_policy" "alb_ingress_controller" {
   name        = "${var.project}-${var.env}-alb-ingress-controller-policy"
@@ -24,7 +28,11 @@ resource "aws_iam_policy" "alb_ingress_controller" {
           "elasticloadbalancing:DescribeTargetHealth",
           "elasticloadbalancing:DescribeTags"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:loadbalancer/*",
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:targetgroup/*",
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:listener/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -36,7 +44,11 @@ resource "aws_iam_policy" "alb_ingress_controller" {
           "elasticloadbalancing:AddTags",
           "elasticloadbalancing:RemoveTags"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:loadbalancer/*",
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:targetgroup/*",
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:listener/*"
+        ]
         Condition = {
           StringEquals = {
             "aws:RequestTag/kubernetes.io/cluster/${var.project}-${var.env}-eks" = "owned"
@@ -62,7 +74,11 @@ resource "aws_iam_policy" "alb_ingress_controller" {
           "elasticloadbalancing:RemoveListenerCertificates",
           "elasticloadbalancing:ModifyRule"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:loadbalancer/*",
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:targetgroup/*",
+          "arn:aws:elasticloadbalancing:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:listener/*"
+        ]
         Condition = {
           StringEquals = {
             "aws:RequestTag/kubernetes.io/cluster/${var.project}-${var.env}-eks" = "owned"
@@ -82,7 +98,13 @@ resource "aws_iam_policy" "alb_ingress_controller" {
           "ec2:DescribeInstanceStatus",
           "ec2:DescribeInstanceTypes"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:subnet/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:security-group/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:route-table/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:vpc/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -96,7 +118,9 @@ resource "aws_iam_policy" "alb_ingress_controller" {
           "ec2:CreateTags",
           "ec2:DeleteTags"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:security-group/*"
+        ]
         Condition = {
           StringEquals = {
             "aws:RequestTag/kubernetes.io/cluster/${var.project}-${var.env}-eks" = "owned"
@@ -112,14 +136,16 @@ resource "aws_iam_policy" "alb_ingress_controller" {
           "logs:DescribeLogStreams",
           "logs:DescribeLogGroups"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*"
+        ]
       },
       {
         Effect = "Allow"
         Action = [
           "iam:CreateServiceLinkedRole"
         ]
-        Resource = "*"
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
         Condition = {
           StringEquals = {
             "iam:AWSServiceName" = "elasticloadbalancing.amazonaws.com"
@@ -128,7 +154,7 @@ resource "aws_iam_policy" "alb_ingress_controller" {
       }
     ]
   })
-
+  
   tags = var.tags
 }
 
@@ -154,7 +180,11 @@ resource "aws_iam_policy" "ebs_csi_driver" {
           "ec2:DescribeVolumes",
           "ec2:DescribeVolumesModifications"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:volume/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:snapshot/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -189,7 +219,7 @@ resource "aws_iam_policy" "ebs_csi_driver" {
         Action = [
           "ec2:CreateVolume"
         ]
-        Resource = "*"
+        Resource = "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:volume/*"
         Condition = {
           StringEquals = {
             "aws:RequestTag/ebs.csi.aws.com/cluster" = "true"
@@ -201,7 +231,7 @@ resource "aws_iam_policy" "ebs_csi_driver" {
         Action = [
           "ec2:DeleteVolume"
         ]
-        Resource = "*"
+        Resource = "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:volume/*"
         Condition = {
           StringEquals = {
             "ec2:ResourceTag/ebs.csi.aws.com/cluster" = "true"
@@ -233,7 +263,13 @@ resource "aws_iam_policy" "vpc_cni" {
           "ec2:DescribeAvailabilityZones",
           "ec2:DescribeTags"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:network-interface/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:subnet/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:security-group/*",
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:vpc/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -246,7 +282,9 @@ resource "aws_iam_policy" "vpc_cni" {
           "ec2:AttachNetworkInterface",
           "ec2:DetachNetworkInterface"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:network-interface/*"
+        ]
         Condition = {
           StringEquals = {
             "aws:RequestTag/kubernetes.io/cluster/${var.project}-${var.env}-eks" = "owned"
@@ -258,7 +296,9 @@ resource "aws_iam_policy" "vpc_cni" {
         Action = [
           "ec2:CreateTags"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:network-interface/*"
+        ]
         Condition = {
           StringEquals = {
             "aws:RequestTag/kubernetes.io/cluster/${var.project}-${var.env}-eks" = "owned"

@@ -22,9 +22,9 @@ variable "env" {
 }
 
 variable "allowed_cidr_blocks" {
-  description = "List of CIDR blocks allowed to access the ALB"
+  description = "List of CIDR blocks allowed to access the ALB (WARNING: 0.0.0.0/0 allows access from anywhere)"
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = ["10.0.0.0/16"]  # Default to VPC CIDR for security
 }
 
 variable "enable_access_logs" {
