@@ -27,6 +27,9 @@ resource "aws_backup_vault" "main" {
   # KMS encryption for compliance (CKV_AWS_166)
   encryption_key_arn = aws_kms_key.backup_default[0].arn
   
+  # Ensure KMS key is created before backup vault
+  depends_on = [aws_kms_key.backup_default]
+  
   tags = var.tags
 }
 
@@ -135,7 +138,8 @@ resource "aws_backup_vault" "dr" {
   name = "${var.project}-${var.env}-dr-backup-vault"
   
   # KMS encryption for compliance (CKV_AWS_166)
-  encryption_key_arn = var.dr_kms_key_arn != "" ? var.dr_kms_key_arn : aws_kms_key.backup_default[0].arn
+  # Use DR-specific KMS key or fallback to DR default key
+  encryption_key_arn = var.dr_kms_key_arn != "" ? var.dr_kms_key_arn : aws_kms_key.backup_dr_default[0].arn
   
   tags = var.tags
 }
@@ -425,6 +429,60 @@ resource "aws_kms_alias" "backup_default" {
   
   name          = "alias/${var.project}-${var.env}-backup-default"
   target_key_id = aws_kms_key.backup_default[0].key_id
+}
+
+# DR Region KMS key for backup encryption
+resource "aws_kms_key" "backup_dr_default" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  description             = "DR region KMS key for ${var.project}-${var.env} backup encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow AWS Backup to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "backup.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "backup.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "backup_dr_default" {
+  count = var.enable_cross_region_backup ? 1 : 0
+  
+  provider = aws.dr_region
+  
+  name          = "alias/${var.project}-${var.env}-backup-dr-default"
+  target_key_id = aws_kms_key.backup_dr_default[0].key_id
 }
 
 # Provider for DR region

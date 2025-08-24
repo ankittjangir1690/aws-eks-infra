@@ -143,6 +143,13 @@ resource "aws_wafv2_web_acl_logging_configuration" "main" {
   
   log_destination_configs = [aws_cloudwatch_log_group.waf[0].arn]
   resource_arn            = aws_wafv2_web_acl.main[0].arn
+  
+  # Ensure proper dependencies for compliance (CKV2_AWS_31)
+  depends_on = [
+    aws_wafv2_web_acl.main,
+    aws_cloudwatch_log_group.waf,
+    aws_kms_key.waf_encryption
+  ]
 }
 
 # KMS key for WAF CloudWatch logs encryption

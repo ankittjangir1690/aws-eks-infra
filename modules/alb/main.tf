@@ -102,26 +102,8 @@ resource "aws_wafv2_web_acl_association" "alb_assoc" {
   depends_on = [aws_lb.myapp]
 }
 
-# CloudWatch Log Group for WAF
-resource "aws_cloudwatch_log_group" "waf" {
-  count = var.enable_waf ? 1 : 0
-  
-  name              = "/aws/wafv2/alb-${var.project}-${var.env}"
-  retention_in_days = 365  # Minimum 1 year for compliance (CKV_AWS_338)
-  kms_key_id        = aws_kms_key.alb_logs_encryption[0].arn  # KMS encryption for compliance (CKV_AWS_158)
-  
-  tags = var.tags
-}
-
-# WAF Logging Configuration
-resource "aws_wafv2_web_acl_logging_configuration" "alb_waf_logging" {
-  count = var.enable_waf ? 1 : 0
-  
-  log_destination_configs = [aws_cloudwatch_log_group.waf[0].arn]
-  resource_arn            = var.waf_web_acl_arn  # Use WAF from security module
-  
-  depends_on = [aws_wafv2_web_acl_association.alb_assoc]
-}
+# Note: WAF logging configuration is managed by the security module
+# This ensures a single logging configuration across all WAF resources
 
 # ALB Listener Rule to drop HTTP headers and redirect to HTTPS
 resource "aws_lb_listener_rule" "drop_http_headers" {
