@@ -89,55 +89,15 @@ resource "aws_lb" "myapp" {
   })
 }
 
-# WAFv2 WebACL for ALB with Log4j AMR (CKV2_AWS_76 compliance)
-resource "aws_wafv2_web_acl" "alb_acl" {
-  count = var.enable_waf ? 1 : 0
-  
-  name        = "${var.project}-${var.env}-alb-waf"
-  description = "WAFv2 WebACL for ALB with Log4j AMR"
-  scope       = "REGIONAL"
-
-  default_action {
-    allow {}
-  }
-
-  rule {
-    name     = "AWS-AWSManagedRulesKnownBadInputsRuleSet"
-    priority = 1
-
-    override_action {
-      none {}
-    }
-
-    statement {
-      managed_rule_group_statement {
-        name        = "AWSManagedRulesKnownBadInputsRuleSet"
-        vendor_name = "AWS"
-      }
-    }
-
-    visibility_config {
-      cloudwatch_metrics_enabled = true
-      metric_name                = "knownBadInputs"
-      sampled_requests_enabled   = true
-    }
-  }
-
-  visibility_config {
-    cloudwatch_metrics_enabled = true
-    metric_name                = "albWebACL"
-    sampled_requests_enabled   = true
-  }
-  
-  tags = var.tags
-}
+# Note: WAF WebACL is now managed by the security module
+# This ensures a single WAF configuration across all resources
 
 # Associate ALB with WAF for protection (CKV2_AWS_76 compliance)
 resource "aws_wafv2_web_acl_association" "alb_assoc" {
   count = var.enable_waf ? 1 : 0
   
   resource_arn = aws_lb.myapp.arn
-  web_acl_arn  = aws_wafv2_web_acl.alb_acl[0].arn
+  web_acl_arn  = var.waf_web_acl_arn  # Use WAF from security module
   
   depends_on = [aws_lb.myapp]
 }
@@ -146,8 +106,9 @@ resource "aws_wafv2_web_acl_association" "alb_assoc" {
 resource "aws_cloudwatch_log_group" "waf" {
   count = var.enable_waf ? 1 : 0
   
-  name              = "/aws/wafv2/alb"
-  retention_in_days = 30
+  name              = "/aws/wafv2/alb-${var.project}-${var.env}"
+  retention_in_days = 365  # Minimum 1 year for compliance (CKV_AWS_338)
+  kms_key_id        = aws_kms_key.alb_logs_encryption[0].arn  # KMS encryption for compliance (CKV_AWS_158)
   
   tags = var.tags
 }
@@ -157,7 +118,7 @@ resource "aws_wafv2_web_acl_logging_configuration" "alb_waf_logging" {
   count = var.enable_waf ? 1 : 0
   
   log_destination_configs = [aws_cloudwatch_log_group.waf[0].arn]
-  resource_arn            = aws_wafv2_web_acl.alb_acl[0].arn
+  resource_arn            = var.waf_web_acl_arn  # Use WAF from security module
   
   depends_on = [aws_wafv2_web_acl_association.alb_assoc]
 }

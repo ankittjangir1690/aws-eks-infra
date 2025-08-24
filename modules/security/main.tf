@@ -131,7 +131,8 @@ resource "aws_cloudwatch_log_group" "waf" {
   count = var.enable_waf ? 1 : 0
   
   name              = "/aws/wafv2/${var.project}-${var.env}"
-  retention_in_days = 30
+  retention_in_days = 365  # Minimum 1 year for compliance (CKV_AWS_338)
+  kms_key_id        = aws_kms_key.waf_encryption[0].arn  # KMS encryption for compliance (CKV_AWS_158)
   
   tags = var.tags
 }
@@ -142,4 +143,54 @@ resource "aws_wafv2_web_acl_logging_configuration" "main" {
   
   log_destination_configs = [aws_cloudwatch_log_group.waf[0].arn]
   resource_arn            = aws_wafv2_web_acl.main[0].arn
+}
+
+# KMS key for WAF CloudWatch logs encryption
+resource "aws_kms_key" "waf_encryption" {
+  count = var.enable_waf ? 1 : 0
+  
+  description             = "KMS key for WAF CloudWatch logs encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow CloudWatch Logs to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "logs.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "waf_encryption" {
+  count = var.enable_waf ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-waf-encryption"
+  target_key_id = aws_kms_key.waf_encryption[0].key_id
 }
