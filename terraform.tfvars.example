@@ -50,7 +50,7 @@ enable_config        = false    # Enable compliance monitoring
 enable_cloudtrail    = false   # Disable API logging (can be expensive)
 
 # Advanced Security (optional)
-enable_waf           = false   # Disable web application firewall
+enable_waf           = true    # Enable web application firewall for Log4j protection (CKV2_AWS_76 compliance)
 enable_inspector     = false   # Disable vulnerability assessment
 
 # Security Configuration
@@ -122,3 +122,11 @@ enable_eks_control_plane_logging = true
 enable_alb_ingress   = false   # Disable ALB Ingress Controller (not needed by default)
 enable_ebs_csi       = false   # Disable EBS CSI Driver (not needed by default)
 enable_vpc_cni       = true    # Enable VPC CNI (required for networking)
+
+# =============================================================================
+# ALB CONFIGURATION - Optional Load Balancer
+# =============================================================================
+
+# ALB Features (uncomment module "alb" in main.tf if needed)
+enable_alb_access_logs = true   # Enable ALB access logging to S3
+acm_certificate_arn = ""        # ACM certificate ARN for HTTPS (required if using ALB)

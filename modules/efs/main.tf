@@ -2,6 +2,10 @@
 # EFS MODULE - Secure EFS File System Configuration
 # =============================================================================
 
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 # EFS File System
 resource "aws_efs_file_system" "main" {
   creation_token = "${var.name}-efs"
@@ -13,8 +17,8 @@ resource "aws_efs_file_system" "main" {
   # Security configuration
   encrypted = true
   
-  # Backup configuration
-  availability_zone_id = var.availability_zone_id
+  # Use KMS CMK for encryption if provided, otherwise use AWS managed key
+  kms_key_id = var.kms_key_arn != "" ? var.kms_key_arn : null
   
   # Lifecycle policy
   lifecycle_policy {
@@ -54,13 +58,21 @@ resource "aws_security_group" "efs" {
     }
   }
 
-  # Egress rule - allow all outbound traffic
+  # Egress rule - allow only necessary outbound traffic
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
+    description = "Allow HTTPS outbound for AWS services"
+  }
+  
+  egress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP outbound for AWS services"
   }
 
   tags = merge(var.tags, {
@@ -78,10 +90,6 @@ resource "aws_efs_mount_target" "main" {
   
   # IP address (optional - AWS will assign if not specified)
   ip_address = var.mount_target_ip_addresses[count.index] != "" ? var.mount_target_ip_addresses[count.index] : null
-
-  tags = merge(var.tags, {
-    Name = "${var.name}-mount-target-${count.index + 1}"
-  })
 }
 
 # EFS Access Point (optional)
@@ -109,7 +117,7 @@ resource "aws_efs_access_point" "main" {
   })
 }
 
-# EFS Backup Policy (if enabled)
+# EFS Backup Policy (if enabled) - CKV2_AWS_18 compliance
 resource "aws_efs_backup_policy" "main" {
   count = var.enable_backup ? 1 : 0
   
@@ -120,12 +128,28 @@ resource "aws_efs_backup_policy" "main" {
   }
 }
 
+# EFS Backup Selection - Explicit integration with AWS Backup (CKV2_AWS_18 compliance)
+resource "aws_backup_selection" "efs_explicit" {
+  count = var.enable_backup ? 1 : 0
+  
+  name         = "${var.name}-efs-backup-selection"
+  iam_role_arn = var.backup_role_arn
+  plan_id      = var.backup_plan_id
+  
+  resources = [
+    aws_efs_file_system.main.arn
+  ]
+  
+  depends_on = [aws_efs_file_system.main]
+}
+
 # CloudWatch Log Group for EFS (if monitoring is enabled)
 resource "aws_cloudwatch_log_group" "efs" {
   count = var.enable_monitoring ? 1 : 0
   
   name              = "/aws/efs/${var.name}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_arn != "" ? var.kms_key_arn : null
 
   tags = var.tags
 }
@@ -171,7 +195,10 @@ resource "aws_iam_role_policy" "efs_monitoring" {
           "logs:DescribeLogGroups",
           "logs:DescribeLogStreams"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/efs/${var.name}",
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/efs/${var.name}:*"
+        ]
       }
     ]
   })

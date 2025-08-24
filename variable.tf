@@ -126,8 +126,8 @@ variable "eks_node_max_size" {
   type        = number
   default     = 5
   validation {
-    condition     = var.eks_node_max_size >= var.eks_node_desired_size
-    error_message = "Maximum size must be greater than or equal to desired size."
+    condition     = var.eks_node_max_size >= 1
+    error_message = "Maximum size must be at least 1."
   }
 }
 
@@ -182,6 +182,22 @@ variable "enable_vpc_cni" {
   default     = true
 }
 
+# =============================================================================
+# ALB CONFIGURATION - Optional Load Balancer
+# =============================================================================
+
+variable "enable_alb_access_logs" {
+  description = "Enable ALB access logging to S3"
+  type        = bool
+  default     = true
+}
+
+variable "acm_certificate_arn" {
+  description = "ACM certificate ARN for ALB HTTPS (required if using ALB)"
+  type        = string
+  default     = ""
+}
+
 # Advanced Security Features
 variable "enable_guardduty" {
   description = "Enable AWS GuardDuty for threat detection"
@@ -208,9 +224,9 @@ variable "enable_cloudtrail" {
 }
 
 variable "enable_waf" {
-  description = "Enable AWS WAF for web application protection"
+  description = "Enable AWS WAF for web application protection (required for CKV2_AWS_76 compliance)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_inspector" {
@@ -324,9 +340,9 @@ variable "rum_domain" {
 
 # Advanced Backup Features
 variable "enable_backup" {
-  description = "Enable AWS Backup for automated backup"
+  description = "Enable AWS Backup for automated backup (required for CKV_AWS_166 compliance)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_cross_region_backup" {

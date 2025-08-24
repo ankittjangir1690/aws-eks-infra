@@ -2,6 +2,10 @@
 # VPC MODULE - Secure VPC Configuration
 # =============================================================================
 
+# Data sources for resource ARNs
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
 # Data source for availability zones
 data "aws_availability_zones" "available" {
   state = "available"
@@ -21,13 +25,25 @@ resource "aws_vpc" "main" {
   })
 }
 
+# Restrict default VPC security group
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.main.id
+
+  # No ingress rules - deny all inbound traffic
+  # No egress rules - deny all outbound traffic
+  
+  tags = merge(var.tags, {
+    Name = "${var.project}-${var.env}-default-sg"
+  })
+}
+
 # Public Subnets
 resource "aws_subnet" "public" {
   count                   = length(var.azs)
   vpc_id                  = aws_vpc.main.id
   cidr_block              = cidrsubnet(aws_vpc.main.cidr_block, 8, count.index)
   availability_zone       = var.azs[count.index]
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false  # Disable public IP assignment by default for security
 
   tags = merge(var.tags, {
     Name = "${var.project}-${var.env}-public-subnet-${count.index + 1}"
@@ -100,6 +116,8 @@ resource "aws_route_table" "private" {
   route {
     cidr_block     = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.main.id
+    # Note: This route is required for NAT Gateway to route private subnet traffic to internet
+    # The NAT Gateway provides controlled outbound access while maintaining private subnet security
   }
 
   # VPC Peering route (if specified)
@@ -148,9 +166,60 @@ resource "aws_cloudwatch_log_group" "vpc_flow_log" {
   count = var.enable_vpc_flow_logs ? 1 : 0
   
   name              = "/aws/vpc/flowlogs/${var.project}-${var.env}"
-  retention_in_days = 30
+  retention_in_days = 365  # Minimum 1 year for compliance
+  kms_key_id        = aws_kms_key.vpc_flow_logs[0].arn
 
   tags = var.tags
+}
+
+# KMS key for VPC Flow Logs encryption
+resource "aws_kms_key" "vpc_flow_logs" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+  
+  description             = "KMS key for VPC Flow Logs encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow VPC Flow Logs to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "vpc-flow-logs.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "vpc-flow-logs.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "vpc_flow_logs" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-vpc-flow-logs"
+  target_key_id = aws_kms_key.vpc_flow_logs[0].key_id
 }
 
 # IAM Role for VPC Flow Logs
@@ -194,7 +263,10 @@ resource "aws_iam_role_policy" "vpc_flow_log_policy" {
           "logs:DescribeLogGroups",
           "logs:DescribeLogStreams"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*",
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-stream:*"
+        ]
       }
     ]
   })

@@ -1,6 +1,10 @@
 # =============================================================================
-# MONITORING MODULE - Advanced Monitoring and Alerting
+# MONITORING MODULE - CloudWatch Monitoring and Alerting
 # =============================================================================
+
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 # CloudWatch Dashboard for EKS Infrastructure
 resource "aws_cloudwatch_dashboard" "eks_infrastructure" {
@@ -173,23 +177,24 @@ resource "aws_cloudwatch_metric_alarm" "efs_high_connections" {
 }
 
 # CloudWatch Alarms for VPC
-resource "aws_cloudwatch_metric_alarm" "vpc_high_dropped_packets" {
+resource "aws_cloudwatch_metric_alarm" "vpc_dropped_packets" {
   count = var.enable_vpc_alarms ? 1 : 0
   
-  alarm_name          = "${var.project}-${var.env}-vpc-high-dropped-packets"
+  alarm_name          = "${var.project}-${var.env}-vpc-dropped-packets"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "PacketsDroppedCount"
   namespace           = "AWS/VPC"
   period              = 300
   statistic           = "Sum"
-  threshold           = 100
-  alarm_description   = "VPC has high number of dropped packets"
-  alarm_actions       = var.alarm_actions
+  threshold           = 10
   
   dimensions = {
     VPCId = var.vpc_id
   }
+  
+  alarm_actions       = var.alarm_actions
+  alarm_description   = "VPC dropped packets threshold exceeded"
   
   tags = var.tags
 }
@@ -219,7 +224,60 @@ resource "aws_sns_topic" "alarms" {
   
   name = "${var.project}-${var.env}-alarms-topic"
   
+  # Enable KMS encryption
+  kms_master_key_id = aws_kms_key.sns_encryption[0].arn
+  
   tags = var.tags
+}
+
+# KMS key for SNS topic encryption
+resource "aws_kms_key" "sns_encryption" {
+  count = var.enable_sns_notifications ? 1 : 0
+  
+  description             = "KMS key for SNS topic encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow SNS to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "sns.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "sns.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
+resource "aws_kms_alias" "sns_encryption" {
+  count = var.enable_sns_notifications ? 1 : 0
+  
+  name          = "alias/${var.project}-${var.env}-sns-encryption"
+  target_key_id = aws_kms_key.sns_encryption[0].key_id
 }
 
 # SNS Topic Subscription (Email)
@@ -237,7 +295,7 @@ resource "aws_cloudwatch_composite_alarm" "critical_infrastructure" {
   
   alarm_name = "${var.project}-${var.env}-critical-infrastructure"
   
-  alarm_rule = "ALARM(${aws_cloudwatch_metric_alarm.eks_node_failures[0].alarm_name}) OR ALARM(${aws_cloudwatch_metric_alarm.vpc_high_dropped_packets[0].alarm_name})"
+  alarm_rule = "ALARM(${aws_cloudwatch_metric_alarm.eks_node_failures[0].alarm_name}) OR ALARM(${aws_cloudwatch_metric_alarm.vpc_dropped_packets[0].alarm_name})"
   
   alarm_description = "Critical infrastructure issues detected"
   alarm_actions     = var.alarm_actions
@@ -269,25 +327,18 @@ resource "aws_cloudwatch_metric_alarm" "eks_cpu_anomaly" {
   tags = var.tags
 }
 
-# CloudWatch Contributor Insights for EKS
-resource "aws_cloudwatch_contributor_insights_rule" "eks_api_calls" {
+# CloudWatch Contributor Insights for EKS API calls
+resource "aws_cloudwatch_contributor_insight_rule" "eks_api_calls" {
   count = var.enable_contributor_insights ? 1 : 0
   
-  name = "${var.project}-${var.env}-eks-api-calls"
+  rule_name = "${var.project}-${var.env}-eks-api-calls"
   
-  rule_definition {
-    name = "eks-api-calls"
-    schema = jsonencode({
-      LogGroupName = "/aws/eks/${var.project}-${var.env}-eks/cluster"
-      LogFormat   = "JSON"
-      Fields      = ["$.userIdentity.arn", "$.eventName", "$.sourceIPAddress"]
-    })
-  }
+  rule_definition = "{\"SchemaVersion\":\"1.0\",\"ContributionInsightsRuleDefinition\":[{\"LogGroupName\":\"/aws/eks/${var.project}-${var.env}-eks/cluster\"}]}"
   
   tags = var.tags
 }
 
-# CloudWatch Evidently for Feature Flags (if needed)
+# CloudWatch Evidently - Feature Flags
 resource "aws_evidently_project" "main" {
   count = var.enable_evidently ? 1 : 0
   
@@ -297,7 +348,7 @@ resource "aws_evidently_project" "main" {
   tags = var.tags
 }
 
-# CloudWatch RUM for Application Monitoring (if needed)
+# CloudWatch RUM - Real User Monitoring
 resource "aws_rum_app_monitor" "main" {
   count = var.enable_rum ? 1 : 0
   
@@ -305,12 +356,10 @@ resource "aws_rum_app_monitor" "main" {
   domain = var.rum_domain
   
   app_monitor_configuration {
-    allow_cookies                 = true
-    enable_xray                   = true
-    session_sample_rate           = 0.1
-    guest_role_arn               = aws_iam_role.rum_role[0].arn
-    identity_pool_id             = aws_cognito_identity_pool.main[0].id
-    telemetries                  = ["errors", "performance", "http"]
+    allow_cookies = true
+    enable_xray   = true
+    session_sample_rate = 0.1
+    telemetries = ["errors", "performance", "http"]
   }
   
   tags = var.tags
@@ -344,7 +393,7 @@ resource "aws_cognito_identity_pool" "main" {
   
   identity_pool_name = "${var.project}-${var.env}-rum-identity-pool"
   
-  allow_unauthenticated_identities = true
+  allow_unauthenticated_identities = false  # Disable guest access for security
   
   tags = var.tags
 }

@@ -100,10 +100,28 @@ variable "enable_monitoring" {
   default     = false
 }
 
+variable "backup_role_arn" {
+  description = "ARN of the AWS Backup IAM role for EFS backup integration"
+  type        = string
+  default     = ""
+}
+
+variable "backup_plan_id" {
+  description = "ID of the AWS Backup plan for EFS backup integration"
+  type        = string
+  default     = ""
+}
+
 variable "log_retention_days" {
   description = "Number of days to retain CloudWatch logs"
   type        = number
   default     = 30
+}
+
+variable "kms_key_arn" {
+  description = "KMS key ARN for EFS encryption (optional - uses AWS managed key if not provided)"
+  type        = string
+  default     = ""
 }
 
 variable "tags" {
@@ -111,3 +129,4 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
