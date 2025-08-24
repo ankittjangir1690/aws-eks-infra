@@ -5,7 +5,7 @@
   # EKS Cluster
   # Using commit hash for compliance (CKV_TF_1)
   module "eks" {
-    source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=v19.21.0"
+    source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=8b4b53e0e174faa753bfe988ba96c9e9c150e3d85"
 
   cluster_name    = "${var.project}-${var.env}-eks"
   cluster_version = var.cluster_version
