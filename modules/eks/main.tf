@@ -1,5 +1,5 @@
 # =============================================================================
-# EKS MODULE - Secure EKS Cluster Configuration
+# EKS MODULE - Secure EKS Cluster Configuration (Updated 2024)
 # =============================================================================
 
 # EKS Cluster
@@ -63,9 +63,8 @@ module "eks" {
     # Security configurations
     vpc_security_group_ids = [aws_security_group.eks_nodes.id]
     
-    # IAM role configuration
+    # IAM role configuration - use the module's default role
     iam_role_use_name_prefix = true
-    iam_role_name            = aws_iam_role.eks_node_role.name
   }
   
   # EKS managed node groups
@@ -102,42 +101,6 @@ module "eks" {
   tags = var.tags
 }
 
-# IAM Role for EKS Nodes
-resource "aws_iam_role" "eks_node_role" {
-  name = "${var.project}-${var.env}-eks-node-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = var.tags
-}
-
-# Attach required policies to EKS node role
-resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.eks_node_role.name
-}
-
-resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.eks_node_role.name
-}
-
-resource "aws_iam_role_policy_attachment" "ec2_container_registry_read_only" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.eks_node_role.name
-}
-
 # Security Group for EKS Nodes
 resource "aws_security_group" "eks_nodes" {
   name_prefix = "${var.project}-${var.env}-eks-nodes"
@@ -156,32 +119,6 @@ resource "aws_security_group" "eks_nodes" {
   })
 }
 
-# IAM Role for EKS Cluster
-resource "aws_iam_role" "eks_cluster_role" {
-  name = "${var.project}-${var.env}-eks-cluster-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "eks.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = var.tags
-}
-
-# Attach required policies to EKS cluster role
-resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.eks_cluster_role.name
-}
-
 # EKS Cluster IAM Role Mapping
 resource "aws_auth_configmap" "aws_auth" {
   metadata {
@@ -192,7 +129,7 @@ resource "aws_auth_configmap" "aws_auth" {
   data = {
     mapRoles = yamlencode([
       {
-        rolearn  = aws_iam_role.eks_node_role.arn
+        rolearn  = module.eks.node_groups["general"].iam_role_name
         username = "system:node:{{EC2PrivateDNSName}}"
         groups   = ["system:bootstrappers", "system:nodes"]
       }
@@ -228,7 +165,7 @@ resource "aws_eks_cluster" "main" {
   count = var.enable_eks_control_plane_logging ? 1 : 0
   
   name     = "${var.project}-${var.env}-eks"
-  role_arn = aws_iam_role.eks_cluster_role.arn
+  role_arn = module.eks.cluster_iam_role_name
   version  = var.cluster_version
 
   vpc_config {
@@ -241,7 +178,6 @@ resource "aws_eks_cluster" "main" {
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   depends_on = [
-    aws_iam_role_policy_attachment.eks_cluster_policy,
     aws_cloudwatch_log_group.eks_cluster
   ]
 

@@ -80,6 +80,28 @@ variable "enable_eks_control_plane_logging" {
   default     = true
 }
 
+# =============================================================================
+# ADDITIONAL FEATURE FLAGS
+# =============================================================================
+
+variable "enable_alb_ingress" {
+  description = "Enable ALB Ingress Controller and attach required policies"
+  type        = bool
+  default     = false
+}
+
+variable "enable_ebs_csi" {
+  description = "Enable EBS CSI Driver and attach required policies"
+  type        = bool
+  default     = false
+}
+
+variable "enable_vpc_cni" {
+  description = "Enable VPC CNI and attach required policies"
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)

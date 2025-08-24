@@ -39,11 +39,86 @@ allowed_public_cidrs = [
   "YOUR_OFFICE_CIDR/24"  # Replace with your office network
 ]
 
-# Security Features
+# =============================================================================
+# SECURITY FEATURES - Set to true only what you want enabled
+# =============================================================================
+
+# Core Security Services
+enable_guardduty     = false    # Enable threat detection
+enable_security_hub  = false   # Disable security findings (can be expensive)
+enable_config        = false    # Enable compliance monitoring
+enable_cloudtrail    = false   # Disable API logging (can be expensive)
+
+# Advanced Security (optional)
+enable_waf           = false   # Disable web application firewall
+enable_inspector     = false   # Disable vulnerability assessment
+
+# Security Configuration
+waf_rate_limit       = 2000    # WAF rate limiting requests per 5 minutes
+config_log_retention_days = 90
+cloudtrail_log_retention_days = 90
+waf_log_retention_days = 30
+
+# =============================================================================
+# MONITORING FEATURES - Set to true only what you want enabled
+# =============================================================================
+
+# Core Monitoring
+enable_monitoring_dashboard = true   # Enable CloudWatch dashboard
+enable_eks_alarms         = true    # Enable EKS alarms
+enable_efs_alarms         = true    # Enable EFS alarms
+enable_vpc_alarms         = true    # Enable VPC alarms
+
+# Advanced Monitoring (optional)
+enable_log_insights       = false   # Disable Log Insights queries
+enable_sns_notifications  = false   # Disable SNS notifications
+enable_composite_alarms   = false   # Disable composite alarms
+enable_anomaly_detection  = false   # Disable anomaly detection
+enable_contributor_insights = false # Disable Contributor Insights
+enable_evidently          = false   # Disable Evidently feature flags
+enable_rum                = false   # Disable RUM application monitoring
+
+# Monitoring Configuration
+alarm_email = "alerts@yourcompany.com"  # Email for notifications
+rum_domain = "your-app-domain.com"      # Domain for RUM monitoring
+
+# =============================================================================
+# BACKUP FEATURES - Set to true only what you want enabled
+# =============================================================================
+
+# Core Backup
+enable_backup             = false   # Disable AWS Backup (can be expensive)
+enable_cross_region_backup = false  # Disable cross-region backup
+enable_cross_account_backup = false # Disable cross-account backup
+
+# EFS Backup
+enable_efs_backup      = false
+enable_efs_monitoring  = false
+
+# Backup Configuration
+backup_retention_days  = 30
+weekly_backup_retention_days = 90
+monthly_backup_retention_days = 365
+
+# KMS Configuration (optional)
+kms_key_arn = ""        # Leave empty to use default encryption
+dr_region = ""          # Leave empty if not using cross-region backup
+dr_kms_key_arn = ""     # Leave empty if not using cross-region backup
+
+# =============================================================================
+# BASIC FEATURES - Core infrastructure features
+# =============================================================================
+
+# VPC Features
 enable_vpc_flow_logs           = true
 enable_cloudwatch_logs        = true
 enable_eks_control_plane_logging = true
 
-# Backup Configuration
-enable_efs_backup      = false
-backup_retention_days  = 30
+# =============================================================================
+# EKS ADDITIONAL FEATURES - Enable only what you need
+# =============================================================================
+
+# Load Balancer and Storage Features
+enable_alb_ingress   = false   # Disable ALB Ingress Controller (not needed by default)
+enable_ebs_csi       = false   # Disable EBS CSI Driver (not needed by default)
+enable_vpc_cni       = true    # Enable VPC CNI (required for networking)
