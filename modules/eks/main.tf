@@ -83,6 +83,9 @@ module "eks" {
       instance_types = var.node_instance_types
       capacity_type  = "ON_DEMAND"
       
+      # Explicitly attach security group to this node group (CKV2_AWS_5 compliance)
+      vpc_security_group_ids = [aws_security_group.eks_nodes.id]
+      
       # Update configuration
       update_config = {
         max_unavailable_percentage = 33

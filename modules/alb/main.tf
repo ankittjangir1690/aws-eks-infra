@@ -67,6 +67,9 @@ resource "aws_lb" "myapp" {
   idle_timeout               = 60
   enable_cross_zone_load_balancing = true
 
+  # HTTP header dropping for security (CKV_AWS_131 compliance)
+  drop_invalid_header_field = true
+
   # Access logging
   access_logs {
     bucket  = aws_s3_bucket.alb_logs[0].bucket
@@ -161,38 +164,10 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# S3 Bucket for ALB Access Logs
-resource "aws_s3_bucket" "alb_logs" {
-  count  = var.enable_access_logs ? 1 : 0
-  bucket = "${var.project}-${var.env}-alb-logs-${random_string.bucket_suffix[0].result}"
-
-  tags = merge(var.tags, {
-    Name = "${var.project}-${var.env}-alb-logs"
-  })
-}
-
-# S3 Bucket Versioning
-resource "aws_s3_bucket_versioning" "alb_logs" {
-  count  = var.enable_access_logs ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-# S3 Bucket Encryption
-resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
-  count  = var.enable_access_logs ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.alb_logs_encryption[0].arn
-      sse_algorithm     = "aws:kms"
-    }
-  }
-}
+# S3 Bucket for ALB Access Logs (Complete configuration)
+# Note: The complete bucket configuration is defined later in this file
+# with all required security features including versioning, encryption,
+# public access blocks, lifecycle, and event notifications.
 
 # KMS key for ALB logs encryption
 resource "aws_kms_key" "alb_logs_encryption" {

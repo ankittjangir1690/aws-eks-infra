@@ -93,6 +93,41 @@ resource "aws_s3_bucket_public_access_block" "config_bucket" {
   restrict_public_buckets = true
 }
 
+# Config bucket lifecycle configuration
+resource "aws_s3_bucket_lifecycle_configuration" "config_bucket" {
+  count = var.enable_config ? 1 : 0
+  
+  bucket = aws_s3_bucket.config_bucket[0].id
+  
+  rule {
+    id     = "config_lifecycle"
+    status = "Enabled"
+    
+    filter {
+      prefix = ""
+    }
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 2555  # 7 years for compliance
+    }
+
+    # Abort incomplete multipart uploads after 7 days
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
 # IAM Role for Config
 resource "aws_iam_role" "config_role" {
   count = var.enable_config ? 1 : 0
@@ -132,41 +167,6 @@ resource "aws_s3_bucket_logging" "config_bucket" {
   target_prefix = "logs/"
 }
 
-# Config bucket lifecycle configuration
-resource "aws_s3_bucket_lifecycle_configuration" "config_bucket" {
-  count = var.enable_config ? 1 : 0
-  
-  bucket = aws_s3_bucket.config_bucket[0].id
-  
-  rule {
-    id     = "config_lifecycle"
-    status = "Enabled"
-    
-    filter {
-      prefix = ""
-    }
-
-    transition {
-      days          = 30
-      storage_class = "STANDARD_IA"
-    }
-
-    transition {
-      days          = 90
-      storage_class = "GLACIER"
-    }
-
-    expiration {
-      days = 2555  # 7 years for compliance
-    }
-
-    # Abort incomplete multipart uploads after 7 days
-    abort_incomplete_multipart_upload {
-      days_after_initiation = 7
-    }
-  }
-}
-
 # CloudTrail - API Call Logging
 resource "aws_cloudtrail" "main" {
   count = var.enable_cloudtrail ? 1 : 0
@@ -183,7 +183,7 @@ resource "aws_cloudtrail" "main" {
   # Enable KMS encryption
   kms_key_id = aws_kms_key.cloudtrail_encryption[0].arn
   
-  # Enable CloudWatch integration
+  # Enable CloudWatch integration (CKV2_AWS_10 compliance)
   cloud_watch_logs_group_arn = aws_cloudwatch_log_group.cloudtrail[0].arn
   cloud_watch_logs_role_arn  = aws_iam_role.cloudtrail_cloudwatch[0].arn
   
@@ -206,6 +206,55 @@ resource "aws_kms_key" "cloudtrail_encryption" {
   description             = "KMS key for CloudTrail encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow CloudTrail to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "cloudtrail.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "Allow CloudWatch Logs to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "logs.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
   
   tags = var.tags
 }
