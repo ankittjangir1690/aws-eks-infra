@@ -110,6 +110,7 @@ variable "backup_plan_id" {
   description = "ID of the AWS Backup plan for EFS backup integration"
   type        = string
   default     = ""
+}
 
 variable "log_retention_days" {
   description = "Number of days to retain CloudWatch logs"
@@ -127,4 +128,9 @@ variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
   default     = {}
+}
+
+variable "efs_name" {
+  description = "Name of the EFS filesystem"
+  type        = string
 }

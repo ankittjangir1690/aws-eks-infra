@@ -65,7 +65,7 @@ resource "aws_lb" "myapp" {
   enable_cross_zone_load_balancing = true
 
   # HTTP header dropping for security (CKV_AWS_131 compliance)
-  drop_invalid_header_field = true
+  drop_invalid_header_fields = true
   
   # Additional header dropping for enhanced security
   enable_http2 = true
@@ -89,51 +89,77 @@ resource "aws_lb" "myapp" {
   })
 }
 
+# WAFv2 WebACL for ALB with Log4j AMR (CKV2_AWS_76 compliance)
+resource "aws_wafv2_web_acl" "alb_acl" {
+  count = var.enable_waf ? 1 : 0
+  
+  name        = "${var.project}-${var.env}-alb-waf"
+  description = "WAFv2 WebACL for ALB with Log4j AMR"
+  scope       = "REGIONAL"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "AWS-AWSManagedRulesKnownBadInputsRuleSet"
+    priority = 1
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "knownBadInputs"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "albWebACL"
+    sampled_requests_enabled   = true
+  }
+  
+  tags = var.tags
+}
+
 # Associate ALB with WAF for protection (CKV2_AWS_76 compliance)
-resource "aws_wafv2_web_acl_association" "alb" {
+resource "aws_wafv2_web_acl_association" "alb_assoc" {
   count = var.enable_waf ? 1 : 0
   
   resource_arn = aws_lb.myapp.arn
-  web_acl_arn  = var.waf_web_acl_arn
+  web_acl_arn  = aws_wafv2_web_acl.alb_acl[0].arn
   
   depends_on = [aws_lb.myapp]
 }
 
-# Additional WAF configuration for Log4j vulnerability protection
+# CloudWatch Log Group for WAF
+resource "aws_cloudwatch_log_group" "waf" {
+  count = var.enable_waf ? 1 : 0
+  
+  name              = "/aws/wafv2/alb"
+  retention_in_days = 30
+  
+  tags = var.tags
+}
+
+# WAF Logging Configuration
 resource "aws_wafv2_web_acl_logging_configuration" "alb_waf_logging" {
   count = var.enable_waf ? 1 : 0
   
-  log_destination_configs = ["arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/wafv2/alb"]
-  resource_arn            = var.waf_web_acl_arn
+  log_destination_configs = [aws_cloudwatch_log_group.waf[0].arn]
+  resource_arn            = aws_wafv2_web_acl.alb_acl[0].arn
   
-  depends_on = [aws_wafv2_web_acl_association.alb]
-}
-
-# Explicit WAF rule for Log4j protection (CKV2_AWS_76 compliance)
-resource "aws_wafv2_web_acl_rule" "log4j_protection" {
-  count = var.enable_waf ? 1 : 0
-  
-  name     = "Log4jProtectionRule"
-  priority = 1
-  
-  override_action {
-    none {}
-  }
-  
-  statement {
-    managed_rule_group_statement {
-      name        = "AWSManagedRulesKnownBadInputsRuleSet"
-      vendor_name = "AWS"
-    }
-  }
-  
-  visibility_config {
-    cloudwatch_metrics_enabled = true
-    metric_name                = "Log4jProtectionMetric"
-    sampled_requests_enabled   = true
-  }
-  
-  web_acl_arn = var.waf_web_acl_arn
+  depends_on = [aws_wafv2_web_acl_association.alb_assoc]
 }
 
 # ALB Listener Rule to drop HTTP headers and redirect to HTTPS
