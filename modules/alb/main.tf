@@ -55,7 +55,7 @@ resource "aws_security_group" "alb_sg" {
 
 resource "aws_lb" "myapp" {
   name               = "${var.project}-${var.env}-alb"
-  internal           = false
+  internal           = true
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
 
